@@ -1,0 +1,181 @@
+# 背景
+
+Neuroph是一个用Java编写的开源神经网络框架，用于构建和训练人工神经网络。它提供了一组易于使用的工具和API，用于创建各种类型的神经网络，包括感知器、多层前馈网络、循环神经网络等。
+
+Neuroph的设计目标是提供一个简单而灵活的框架，使开发人员能够轻松地构建和训练神经网络模型。它具有易于理解的API和丰富的功能，可以用于解决各种问题，如模式识别、数据分类、预测和优化等。
+
+Neuroph支持多种不同的神经网络算法和学习规则，包括感知器学习规则、反向传播算法、Hopfield网络、自组织映射等。它还提供了可视化工具，用于可视化和分析神经网络的结构和性能。
+
+由于其开源性质，Neuroph还允许用户自定义和扩展框架，以满足特定的需求。它在学术界和工业界都得到广泛应用，并且有一个活跃的社区支持和更新。
+
+# 多层神经网络示例
+
+引入Neuroph
+
+```
+<dependency>           
+                        <groupId>org.beykery</groupId>
+            <artifactId>neuroph</artifactId>
+            <version>2.92</version>
+  </dependency>
+```
+
+一个简单的xor示例
+
+```
+import org.neuroph.core.Layer;
+import org.neuroph.core.NeuralNetwork;
+import org.neuroph.core.Neuron;
+import org.neuroph.core.data.DataSet;
+import org.neuroph.core.data.DataSetRow;
+import org.neuroph.nnet.learning.BackPropagation;
+import org.neuroph.util.ConnectionFactory;
+import org.neuroph.util.NeuralNetworkType;
+
+public class NeurophXOR {
+    //构建神经网络
+    public static NeuralNetwork assembleNeuralNetwork() {
+
+        Layer inputLayer = new Layer();
+        inputLayer.addNeuron(new Neuron());
+        inputLayer.addNeuron(new Neuron());
+
+        Layer hiddenLayerOne = new Layer();
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+
+        Layer hiddenLayerTwo = new Layer();
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+
+        Layer outputLayer = new Layer();
+        outputLayer.addNeuron(new Neuron());
+
+        NeuralN
+```
+
+```
+etwork ann = new NeuralNetwork();
+
+        ann.addLayer(0, inputLayer);
+        ann.addLayer(1, hiddenLayerOne);
+        ConnectionFactory.fullConnect(ann.getLayerAt(0), ann.getLayerAt(1));
+        ann.addLayer(2, hiddenLayerTwo);
+        ConnectionFactory.fullConnect(ann.getLayerAt(1), ann.getLayerAt(2));
+        ann.addLayer(3, outputLayer);
+        ConnectionFactory.fullConnect(ann.getLayerAt(2), ann.getLayerAt(3));
+        ConnectionFactory.fullConnect(ann.getLayerAt(0), ann.getLayerAt(ann.getLayersCount() - 1), false);
+
+        ann.setInputNeurons(inputLayer.getNeurons());
+        ann.setOutputNeurons(outputLayer.getNeurons());
+
+        ann.setNetworkType(NeuralNetworkType.MULTI_LAYER_PERCEPTRON);
+        return ann;
+    }
+   //训练数据
+    public static NeuralNetwork trainNeuralNetwork(NeuralNetwork ann) {
+        int inputSize = 2;
+        int outputSize = 1;
+        DataSet ds = new DataSet(inputSize, outputSize);
+
+        DataSetRow rOne = new DataSetRow(new double[] { 0, 1 }, new double[] { 1 });
+        ds.addRow(rOne);
+        DataSetRow rTwo = new DataSetRow(new double[] { 1, 1 }, new double[] { 0 });
+        ds.addRow(rTwo);
+        DataSetRow rThree = new DataSetRow(new double[] { 0, 0 }, new double[] { 0 });
+        ds.addRow(rThree);
+        DataSetRow rFour = new DataSetRow(new double[] { 1, 0 }, new double[] { 1 });
+        ds.addRow(rFour);
+
+        BackPropagation backPropagation = new BackPropagation();
+        backPropagation.setMaxIterations(1000);
+
+        ann.learn(ds, backPropagation);
+        return ann;
+    }
+}
+```
+
+测试用例
+
+```
+import org.neuroph.core.Layer;
+import org.neuroph.core.NeuralNetwork;
+import org.neuroph.core.Neuron;
+import org.neuroph.core.data.DataSet;
+import org.neuroph.core.data.DataSetRow;
+import org.neuroph.nnet.learning.BackPropagation;
+import org.neuroph.util.ConnectionFactory;
+import org.neuroph.util.NeuralNetworkType;
+
+public class NeurophXOR {
+    //构建神经网络
+    public static NeuralNetwork assembleNeuralNetwork() {
+
+        Layer inputLayer = new Layer();
+        inputLayer.addNeuron(new Neuron());
+        inputLayer.addNeuron(new Neuron());
+
+        Layer hiddenLayerOne = new Layer();
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+        hiddenLayerOne.addNeuron(new Neuron());
+
+        Layer hiddenLayerTwo = new Layer();
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+        hiddenLayerTwo.addNeuron(new Neuron());
+
+        Layer outputLayer = new Layer();
+        outputLayer.addNeuron(new Neuron());
+
+        NeuralNetwork ann = new NeuralNetwork();
+
+        ann.addLayer(0, inputLayer);
+        ann.addLayer(1, hiddenLayerOne);
+        ConnectionFactory.fullConnect(ann.getLayerAt(0), ann.getLayerAt(1));
+        ann.addLayer(2, hiddenLayerTwo);
+        ConnectionFactory.fullConnect(ann.getLayerAt(1), ann.getLayerAt(2));
+        ann.addLayer(3, outputLayer);
+        ConnectionFactory.fullConnect(ann.getLayerAt(2), ann.getLayerAt(3));
+        ConnectionFactory.fullConnect(ann.getLayerAt(0), ann.getLayerAt(ann.getLayersCount() - 1), false);
+
+        ann.setInputNeurons(inputLayer.getNeurons());
+        ann.setOutputNeurons(outputLayer.getNeurons());
+
+        ann.setNetworkType(NeuralNetworkType.MULTI_LAYER_PERCEPTRON);
+        return ann;
+    }
+   //训练数据
+    public static NeuralNetwork trainNeuralNetwork(NeuralNetwork ann) {
+        int inputSize = 2;
+        int outputSize = 1;
+        DataSet ds = new DataSet(inputSize, outputSize);
+
+        DataSetRow rOne = new DataSetRow(new double[] { 0, 1 }, new double[] { 1 });
+        ds.addRow(rOne);
+        DataSetRow rTwo = new DataSetRow(new double[] { 1, 1 }, new double[] { 0 });
+        ds.addRow(rTwo);
+        DataSetRow rThree = new DataSetRow(new double[] { 0, 0 }, new double[] { 0 });
+        ds.addRow(rThree);
+        DataSetRow rFour = new DataSetRow(new double[] { 1, 0 }, new double[] { 1 });
+        ds.addRow(rFour);
+
+        BackPropagation backPropagation = new BackPropagation();
+        backPropagation.setMaxIterations(1000);
+
+        ann.learn(ds, backPropagation);
+        return ann;
+    }
+}
+```
+
+# 总结
+
+Neuroph是一个功能强大的神经网络框架，为开发人员提供了构建和训练神经网络模型的工具和API，以解决各种问题。

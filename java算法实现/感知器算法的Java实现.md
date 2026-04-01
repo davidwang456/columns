@@ -1,0 +1,278 @@
+# 背景
+
+感知器算法是一种二分类的线性分类算法。它是由Frank Rosenblatt于1957年提出的，是神经网络的基础。感知器算法的目标是找到一个超平面，将数据集中的两类样本分开。
+
+感知器算法的基本思想是通过学习一组权重，将输入特征映射到输出类别。它将输入特征与权重进行加权求和，并通过激活函数（如阶跃函数）将加权和转换为输出。如果输出与目标类别一致，则权重保持不变；如果输出与目标类别不一致，则根据误差调整权重。
+
+# 感知器算法的java实现
+
+感知器算法的训练过程如下：
+
+1. 初始化权重和偏置项。
+2. 对于每个训练样本，计算加权和并将其输入到激活函数中。
+3. 根据激活函数的输出和目标类别的差异，调整权重和偏置项。
+4. 重复步骤2和步骤3，直到达到停止条件（如达到最大迭代次数或所有样本分类正确）。
+
+```
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
+
+//定义感知器类
+public class Perceptron {
+ private double[] weights;  // 权重数组
+ private double learningRate;  // 学习率
+
+ // 构造函数，初始化权重和学习率
+ public Perceptron(int numFeatures, double learningRate) {
+     this.weights = new double[numFeatures];
+     this.learningRate = learningRate;
+     initializeWeights();
+ }
+
+ // 初始化权重为随机值
+ private void initializeWeights() {
+     Random random = new Random();
+     for (int i = 0; i < weights.length; i++) {
+         weights[i] = random.nextDouble();
+     }
+ }
+
+ // 计算输入特征的加权和
+ private double calculateWeightedSum(double[] inputs) {
+     double weightedSum = 0;
+     for (int i = 0; i < weights.length; i++) {
+         weightedSum += inputs[i] * weights[i];
+     }
+     return weightedSum;
+ }
+
+ // 应用激活函数，返回分类结果
+ private int applyActivationFunction(double weightedSum) {
+     return weightedSum >= 0 ? 1 : -1;
+ }
+
+ // 更新权重
+ private void updateWeights(double[] inputs, int target, int output) {
+     for (int i = 0; i < weights.length; i++) {
+         double delta = learningRate * (target - output) * inputs[i];
+         weights[i] += delta;
+     }
+ }
+
+ // 训练感知器
+ public void train(double[][] trainingInputs, int[] trainingTargets, int maxIterations) {
+     int iteration = 0;
+     while (iteration < maxIterations) {
+         boolean hasErrors = false;
+         for (int i = 0; i < trainingInputs.length; i++) {
+             double[] inputs = trainingInputs[i];
+             int target = trainingTargets[i];
+             double weightedSum = calculateWeightedSum(inputs);
+             int output = applyActivationFunction(weightedSum);
+             if (output != target) {
+                 updateWeights(inputs, target, output);
+                 hasErrors = true;
+             }
+         }
+         if (!hasErrors) {
+             break;
+         }
+         iteration++;
+         System.out.println("第"+iteration+"轮训练后权重为："+weights[0]+","+weights[1]);
+     }
+ }
+
+//训练感知器,限制迭代次数
+public void train2(double[][] trainingInputs, int[] trainingTargets, int maxIterations) {
+  int iteration = 0;
+  List<double[]> lastWeights = new ArrayList<>();
+  while (iteration < maxIterations) {
+      boolean hasErrors = false;
+      for (int i = 0; i < trainingInputs.length; i++) {
+          double[] inputs = trainingInputs[i];
+          int target = trainingTargets[i];
+          double weightedSum = calculateWeightedSum(inputs);
+          int output = applyActivationFunction(weightedSum);
+          if (output != target) {
+              updateWeights(inputs, target, output);
+              hasErrors = true;
+          }
+      }
+      if (!hasErrors) {
+          break;
+      }
+      iteration++;
+      System.out.println("第"+iteration+"轮训练后权重为："+weights[0]+","+weights[1]);
+      // 判断权重是否连续十次相同
+      lastWeights.add(Arrays.copyOf(weights, weights.length));
+      if (lastWeights.size() > 10) {
+          lastWeights.remove(0);
+      }
+      boolean allSame = true;
+      if(lastWeights.size()==10) {
+          for (int i = 1; i < lastWeights.size(); i++) {
+              if (!Arrays.equals(lastWeights.get(i), lastWeights.get(i-1))) {
+                  allSame = false;
+                  break;
+              }
+          }
+          if (allSame) {
+              break;
+          } 
+      }
+  }
+}
+
+
+
+ // 使用训练好的感知器进行预测
+ public int predict(double[] inputs) {
+     double weightedSum = calculateWeightedSum(inputs);
+     return applyActivationFunction(weightedSum);
+ }
+
+ public static void main(String[] args) {
+     // 训练数据集
+     double[][] trainingInputs = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+     int[] trainingTargets = {-1, -1, -1, 1};
+
+     // 创建感知器对象
+     Perceptron perceptron = new Perceptron(2, 0.1);
+
+     // 训练感知器
+     perceptron.train(trainingInputs, trainingTargets, 100);
+
+     // 预测
+     double[] testInputs = {0, 1};
+     int prediction = perceptron.predict(testInputs);
+     System.out.println("预测结果：" + prediction);
+ }
+}
+```
+
+```
+astWeights.remove(0);
+      }
+      boolean allSame = true;
+      if(lastWeights.size()==10) {
+          for (int i = 1; i < lastWeights.size(); i++) {
+              if (!Arrays.equals(lastWeights.get(i), lastWeights.get(i-1))) {
+                  allSame = false;
+                  break;
+              }
+          }
+          if (allSame) {
+              break;
+          } 
+      }
+  }
+}
+
+
+
+ // 使用训练好的感知器进行预测
+ public int predict(double[] inputs) {
+     double weightedSum = calculateWeightedSum(inputs);
+     return applyActivationFunction(weightedSum);
+ }
+
+ public static void main(String[] args) {
+     // 训练数据集
+     double[][] trainingInputs = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+     int[] trainingTargets = {-1, -1, -1, 1};
+
+     // 创建感知器对象
+     Perceptron perceptron = new Perceptron(2, 0.1);
+
+     // 训练感知器
+     perceptron.train(trainingInputs, trainingTargets, 100);
+
+     // 预测
+     double[] testInputs = {0, 1};
+     int prediction = perceptron.predict(testInputs);
+     System.out.println("预测结果：" + prediction);
+ }
+}
+```
+
+```
+on++;
+         System.out.println("第"+iteration+"轮训练后权重为："+weights[0]+","+weights[1]);
+     }
+ }
+
+//训练感知器,限制迭代次数
+public void train2(double[][] trainingInputs, int[] trainingTargets, int maxIterations) {
+  int iteration = 0;
+  List<double[]> lastWeights = new ArrayList<>();
+  while (iteration < maxIterations) {
+      boolean hasErrors = false;
+      for (int i = 0; i < trainingInputs.length; i++) {
+          double[] inputs = trainingInputs[i];
+          int target = trainingTargets[i];
+          double weightedSum = calculateWeightedSum(inputs);
+          int output = applyActivationFunction(weightedSum);
+          if (output != target) {
+              updateWeights(inputs, target, output);
+              hasErrors = true;
+          }
+      }
+      if (!hasErrors) {
+          break;
+      }
+      iteration++;
+      System.out.println("第"+iteration+"轮训练后权重为："+weights[0]+","+weights[1]);
+      // 判断权重是否连续十次相同
+      lastWeights.add(Arrays.copyOf(weights, weights.length));
+      if (lastWeights.size() > 10) {
+          lastWeights.remove(0);
+      }
+      boolean allSame = true;
+      if(lastWeights.size()==10) {
+          for (int i = 1; i < lastWeights.size(); i++) {
+              if (!Arrays.equals(lastWeights.get(i), lastWeights.get(i-1))) {
+                  allSame = false;
+                  break;
+              }
+          }
+          if (allSame) {
+              break;
+          } 
+      }
+  }
+}
+
+
+
+ // 使用训练好的感知器进行预测
+ public int predict(double[] inputs) {
+     double weightedSum = calculateWeightedSum(inputs);
+     return applyActivationFunction(weightedSum);
+ }
+
+ public static void main(String[] args) {
+     // 训练数据集
+     double[][] trainingInputs = {{0, 0}, {0, 1}, {1, 0}, {1, 1}};
+     int[] trainingTargets = {-1, -1, -1, 1};
+
+     // 创建感知器对象
+     Perceptron perceptron = new Perceptron(2, 0.1);
+
+     // 训练感知器
+     perceptron.train(trainingInputs, trainingTargets, 100);
+
+     // 预测
+     double[] testInputs = {0, 1};
+     int prediction = perceptron.predict(testInputs);
+     System.out.println("预测结果：" + prediction);
+ }
+}
+```
+
+# 总结
+
+感知器算法的优点是简单易懂、计算效率高，并且对于线性可分的数据集可以得到较好的分类结果。然而，感知器算法只能处理线性可分的问题，对于线性不可分的问题无法得到准确的分类结果。此外，感知器算法对于噪声和异常值比较敏感。
+
+感知器算法的应用领域包括图像识别、自然语言处理、模式识别等。它为神经网络的发展奠定了基础，并且在机器学习领域具有重要的意义。
