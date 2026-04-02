@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.davidwang456.mybatis.one2many.AddressMapper">
+	<insert id="insertAddressInfo" parameterType="com.davidwang456.mybatis.one2many.Address">	
+		INSERT INTO `address` 
+		( `student_id`, `address_type`, `detail`) 
+		VALUES
+		(#{studentId},#{addressType},#{detail})	
+	</insert>
+</mapper>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.davidwang456.mybatis.rediscache.StudentMapper">
+	<cache eviction="LRU" type="org.mybatis.caches.redis.RedisCache"/>
+	<select id="getStudentInfoByCondition" parameterType="com.davidwang456.mybatis.rediscache.StudentQueryDTO" resultType="com.davidwang456.mybatis.rediscache.StudentDTO">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select id,
+			   first_name ,
+			   last_name ,
+			   age,
+			   create_time,
+			   update_time
+			   from student
+			   where 1=1 
+			   <if test="id!=null">
+			   and id=#{id}
+			   </if>
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (first_name LIKE #{condition}
+			   OR last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and age=#{age}
+			   </if>
+			   <if test="startDate!=null">
+			   AND create_time > #{startDate}
+			   AND update_time > #{startDate}
+			   </if>
+			   <if test="endDate!=null">
+			   AND  create_time <![CDATA[< #{endDate}]]>
+			   AND  update_time <![CDATA[< #{endDate}]]>
+			   </if>
+			   ORDER BY ${sort} ${orderBy}			   		   		  				  
+	</select>	
+	
+	
+<!-- 根据id查询的存储过程 -->
+	<select id="getStudentInfoById" parameterType="Integer" resultType="com.davidwang456.mybatis.rediscache.StudentDTO" statementType="CALLABLE">
+		{call getStudentInfoById(#{id,mode=IN})}
+	</select>
+</mapper>

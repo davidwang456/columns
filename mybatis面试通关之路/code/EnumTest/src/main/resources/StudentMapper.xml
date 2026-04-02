@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.davidwang456.mybatis.enumtest.StudentMapper">	
+	<insert id="insert" parameterType="StudentDTO">
+		insert into student(first_name ,
+			   last_name ,
+			   age,
+			   status)values(
+			   #{firstName},
+			   #{lastName},
+			   #{age},
+			   #{status}
+			   )
+	</insert>
+	
+		<insert id="insert1" parameterType="StudentDTO">
+		insert into student1(first_name ,
+			   last_name ,
+			   age,
+			   status)values(
+			   #{firstName},
+			   #{lastName},
+			   #{age},
+			   #{status,typeHandler=org.apache.ibatis.type.EnumTypeHandler}
+			   )
+	</insert>
+	
+	<insert id="insert2" parameterType="StudentDTO">
+		insert into student2(first_name ,
+			   last_name ,
+			   age,
+			   status)values(
+			   #{firstName},
+			   #{lastName},
+			   #{age},
+			   #{status,typeHandler=org.apache.ibatis.type.EnumOrdinalTypeHandler}
+			   )
+	</insert>
+
+	<insert id="insert3" parameterType="StudentDTO">
+		insert into student3(first_name ,
+			   last_name ,
+			   age,
+			   status)values(
+			   #{firstName},
+			   #{lastName},
+			   #{age},
+			   #{status,typeHandler=com.davidwang456.mybatis.enumtest.StatusTypeHandler}
+			   )
+	</insert>	
+
+	<resultMap type="StudentDTO" id="student">
+		<id column="id" property="id" />
+		<result column="first_name" property="firstName" ></result>
+		<result column="last_name" property="lastName" ></result>
+		<result column="age" property="age" ></result>
+		<result column="status" property="status" javaType="com.davidwang456.mybatis.enumtest.Status" jdbcType="VARCHAR"></result>
+	</resultMap>		
+	<resultMap type="StudentDTO" id="student1">
+		<id column="id" property="id" />
+		<result column="first_name" property="firstName" ></result>
+		<result column="last_name" property="lastName" ></result>
+		<result column="age" property="age" ></result>
+		<result column="status" property="status" javaType="com.davidwang456.mybatis.enumtest.Status" jdbcType="VARCHAR" typeHandler="org.apache.ibatis.type.EnumTypeHandler" ></result>
+	</resultMap>
+	<resultMap type="StudentDTO" id="student2">
+		<id column="id" property="id" />
+		<result column="first_name" property="firstName" ></result>
+		<result column="last_name" property="lastName" ></result>
+		<result column="age" property="age" ></result>
+		<result column="status" property="status" javaType="com.davidwang456.mybatis.enumtest.Status" jdbcType="VARCHAR" typeHandler="org.apache.ibatis.type.EnumOrdinalTypeHandler" ></result>
+	</resultMap>	
+	
+	<resultMap type="StudentDTO" id="student3">
+		<id column="id" property="id" />
+		<result column="first_name" property="firstName" ></result>
+		<result column="last_name" property="lastName" ></result>
+		<result column="age" property="age" ></result>
+		<result column="status" property="status" javaType="com.davidwang456.mybatis.enumtest.Status" jdbcType="VARCHAR" typeHandler="com.davidwang456.mybatis.enumtest.StatusTypeHandler" ></result>
+	</resultMap>	
+	<select id="getStudentInfoByCondition" parameterType="StudentQueryDTO" resultMap="student">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select id,
+			   first_name ,
+			   last_name ,
+			   age,
+			   status
+			   from student
+			   where 1=1 
+			   <if test="id!=null">
+			   and id=#{id}
+			   </if>
+			   <if test="firstName!=null and firstName!=''">
+			   	and first_name = #{firstName}
+			   </if>
+			   <if test="lastName!=null and lastName!=''">
+			   	and last_name = #{lastName}
+			   </if>			   
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (first_name LIKE #{condition}
+			   OR last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and age=#{age}
+			   </if>			   
+			  <if test="status!=null">
+			   and status=#{status}
+			   </if>			   		   		  				  
+	</select>
+		<select id="getStudentInfoByCondition1" parameterType="StudentQueryDTO" resultMap="student1">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select id,
+			   first_name ,
+			   last_name ,
+			   age,
+			   status
+			   from student1
+			   where 1=1 
+			   <if test="id!=null">
+			   and id=#{id}
+			   </if>
+			   <if test="firstName!=null and firstName!=''">
+			   	and first_name = #{firstName}
+			   </if>
+			   <if test="lastName!=null and lastName!=''">
+			   	and last_name = #{lastName}
+			   </if>			   
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (first_name LIKE #{condition}
+			   OR last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and age=#{age}
+			   </if>			   
+			  <if test="status!=null">
+			   and status=#{status,typeHandler=org.apache.ibatis.type.EnumTypeHandler}
+			   </if>			   		   		  				  
+	</select>
+	
+	<select id="getStudentInfoByCondition2" parameterType="StudentQueryDTO" resultMap="student2">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select id,
+			   first_name ,
+			   last_name ,
+			   age,
+			   status
+			   from student2
+			   where 1=1 
+			   <if test="id!=null">
+			   and id=#{id}
+			   </if>
+			   <if test="firstName!=null and firstName!=''">
+			   	and first_name = #{firstName}
+			   </if>
+			   <if test="lastName!=null and lastName!=''">
+			   	and last_name = #{lastName}
+			   </if>			   
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (first_name LIKE #{condition}
+			   OR last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and age=#{age}
+			   </if>			   
+			  <if test="status!=null">
+			   and status=#{status,typeHandler=org.apache.ibatis.type.EnumOrdinalTypeHandler}
+			   </if>			   		   		  				  
+	</select>
+
+	<select id="getStudentInfoByCondition3" parameterType="StudentQueryDTO" resultMap="student3">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select id,
+			   first_name ,
+			   last_name ,
+			   age,
+			   status
+			   from student3
+			   where 1=1 
+			   <if test="id!=null">
+			   and id=#{id}
+			   </if>
+			   <if test="firstName!=null and firstName!=''">
+			   	and first_name = #{firstName}
+			   </if>
+			   <if test="lastName!=null and lastName!=''">
+			   	and last_name = #{lastName}
+			   </if>			   
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (first_name LIKE #{condition}
+			   OR last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and age=#{age}
+			   </if>			   
+			  <if test="status!=null">
+			   and status=#{status,typeHandler=com.davidwang456.mybatis.enumtest.StatusTypeHandler}
+			   </if>			   		   		  				  
+	</select>		
+</mapper>

@@ -1,0 +1,48 @@
+mybatis面试通关之路目录
+http://c.biancheng.net/view/4319.html
+
+开篇词：天下大势，三分天下之SSH到SSM演义
+第一部分：Mybatis:Hello world !
+01：面试之殇--Myatis如何寻找要执行的sql？
+02：Jdbc不香吗？聊聊spring jdbcTemplate吧？
+03：ORM框架之争：mybatis，hibernate，jpa	
+
+第二部分：精通Mybatis，我可以给你证明！
+01：mybatis中#和$的区别？easy！
+02：批量操作我可不是用循环操作的！
+03：like查询会不会走索引？我可以证明给你看！
+04：动态排序什么实现？too young too naive！
+05：自增主键会不会冲突？难不倒我！
+06：区域查询出错，我也可以搞定！
+07：如何处理Blob/Clob字段？没问题！
+08：mybatis如何预防sql注入问题？召唤魔法！
+
+第三部分：面试官也发怵的问题探讨后续
+01：mybatis高级查询：一对多，多对多怎么实现的？
+02：mybatis配置文件中resultType和resultMap有什么不同？
+03：mybatis properties,typeAlias及标签bind的作用及用法是什么？
+04：Mybatis是否支持注解？如果支持，如何实现注解的？
+05：mybatis如何处理枚举类型？名还是值？
+06：mybatis什么时候要用到一级缓存？一级缓存会碰到什么问题？
+07：spring如何集成mybatis？
+08：spring boot如何集成mybatis？
+
+第四部分：让面试官失眠的mybatis面试八连问
+01：mybatis 可以支持几种打印日志的方式？这几种方式可以混用吗？原理是什么？
+02：如何使用mybatis实现分页查询？有几种方式？各种方式的优缺点是什么？
+03：Mybatis注解要注意什么？xml和注解的优缺点？
+04：mybatis如何对事务进行管理的？
+05：什么情况下要用到存储过程？mybatis支持不支持调用存储过程?
+06：mybatis什么时候要用到二级缓存？如何使用redis实现二级缓存？二级缓存会碰到什么问题？
+07：Mybatis插件有什么作用？插件是如何起作用的？
+08：Mybatis 如何加快开发效率？可以实现代码自动生成吗？
+
+第五部分：会了这些问题，可以和面试官多聊30分钟！
+01：mybatis的工作原理是什么？
+02：会话session有什么作用？
+03：生成session为什么要用SqlSessionFactory？
+04：Mybatis如何读取xml配置文件？配置文件大小有限制吗？
+05：Mybatis的Resource和Spring中的Resource有什么关联吗？
+
+第六部分：面试通关之十八罗汉阵
+

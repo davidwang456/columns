@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.davidwang456.mybatis.batch.StudentMapper">
+	<insert id="insertStudentInfo" parameterType="com.davidwang456.mybatis.batch.StudentDTO">	
+		INSERT INTO `student` 
+		( `first_name`, `last_name`, `age`) 
+		VALUES
+		(#{firstName},#{lastName},#{age})	
+	</insert>
+	
+	<insert id="insertBatchStudentInfo" parameterType="com.davidwang456.mybatis.batch.StudentDTO">
+		INSERT INTO `student` 
+		( `first_name`, `last_name`, `age`) 
+		VALUES
+    <foreach collection ="dtos" item="dto" separator =",">
+         (#{dto.firstName}, #{dto.lastName}, #{dto.age})
+    </foreach >
+</insert>
+</mapper>

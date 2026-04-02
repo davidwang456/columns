@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.davidwang456.mybatis.one2many.StudentMapper">
+	<insert id="insertStudentInfo" parameterType="com.davidwang456.mybatis.one2many.StudentDTO" keyColumn="id"	useGeneratedKeys="true" keyProperty="id">	
+		INSERT INTO `student` 
+		( `first_name`, `last_name`, `age`,
+		`content`, `image`) 
+		VALUES
+		(#{firstName},#{lastName},#{age},#{content},#{image})	
+	</insert>
+	<resultMap type="com.davidwang456.mybatis.one2many.StudentDTO" id="studentInfoWithAddress">
+		<id column="s_student_id" property="id" />
+		<result column="s_first_name" property="firstName" ></result>
+		<result column="s_last_name" property="lastName" ></result>
+		<result column="s_age" property="age" ></result>
+		<result column="s_create_time" property="createTime" ></result>
+		<result column="s_update_time" property="updateTime" ></result>
+		<collection property="addrs" ofType="com.davidwang456.mybatis.one2many.Address">
+            <id column="a_id" property="id"/>
+            <result column="a_student_id" property="studentId"/>
+            <result column="a_address_type" property="addressType"/>
+            <result column="a_detail" property="detail"/>
+        </collection>
+		
+	</resultMap>
+	
+	<select id="getAllNames" resultType="java.lang.String">
+		select concat(first_name,last_name) as name from student
+	</select>
+	
+	<select id="getAgeById" parameterType="integer"  resultType="integer">
+		select age from student where id=#{id}
+	</select>
+	
+	<select id="getStudentByCondition" parameterType="StudentQueryDTO" resultType="StudentDTO">
+			<bind name="condition" value="'%'+keyword+'%'"/>
+			select s.id ,
+			   s.first_name  ,
+			   s.last_name  ,
+			   s.age ,
+			   s.create_time ,
+			   s.update_time 
+			   from student s
+			   where 1=1 
+			   <if test="id!=null">
+			   and s.id=#{id}
+			   </if>
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (s.first_name LIKE #{condition}
+			   OR s.last_name LIKE #{condition}
+			   )
+			   </if>
+			   <if test="age!=null and age!=0">
+			   and s.age=#{age}
+			   </if>
+	</select>
+	
+	<select id="getStudentInfoByCondition" parameterType="com.davidwang456.mybatis.one2many.StudentQueryDTO" resultType="STUDENTDTO">
+		<bind name="condition" value="'%'+keyword+'%'"/>
+		select s.id ,
+			   s.first_name  ,
+			   s.last_name  ,
+			   s.age ,
+			   s.create_time ,
+			   s.update_time , 
+			   a.id as a_id,
+			   a.student_id ,
+			   a.address_type,
+			   a.detail
+			   from student s
+			   left join address a on s.id= a.student_id 
+			   where 1=1 
+			   <if test="id!=null">
+			   and s.id=#{id}
+			   </if>
+			   <if test="keyword!=null and keyword!=''">
+			   and 
+			   (s.first_name LIKE #{condition}
+			   OR s.last_name LIKE #{condition}
+			   )
+			   </if>
+			  <if test="age!=null and age!=0">
+			   and s.age=#{age}
+			   </if>
+			   <if test="startDate!=null">
+			   AND s.create_time > #{startDate}
+			   AND s.update_time > #{startDate}
+			   </if>
+			   <if test="endDate!=null">
+			   AND  s.create_time <![CDATA[< #{endDate}]]>
+			   AND  s.update_time <![CDATA[< #{endDate}]]>
+			   </if>
+			   ORDER BY ${sort} ${orderBy}			   		   		  				  
+	</select>	
+</mapper>
