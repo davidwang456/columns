@@ -50,9 +50,9 @@ Very long keys are not a good idea. For instance a key of 1024 bytes is a bad id
 - Try to stick with a schema. For instance "object-type:id" is a good idea, as in "user:1000". Dots or dashes are often used for multi-word fields, as in "comment:1234:reply.to" or "comment:1234:reply-to".
 - The maximum allowed key size is 512 MB.
 
-2.破剑式的招式也练熟悉了
+2. 破剑式的招式也练熟悉了
 
-主要有十八招：APPEND,DECR,DECRBY,GET,GETRANGE,GETSET,INCR,INCRBY,INCRBYFLOAT,MGET,MSET,MSETNX,PSETEX,SET,SETEX,SETNX,SETRANGE,STRLEN
+主要有十八招：APPEND、DECR、DECRBY、GET、GETRANGE、GETSET、INCR、INCRBY、INCRBYFLOAT、MGET、MSET、MSETNX、PSETEX、SET、SETEX、SETNX、SETRANGE、STRLEN
 
 3.了解了用户接口的调用情况，发现最近一周用户信息接口中 86%的查询来自根据用户 id，查询用户信息，新增，修改和删除频率低于 1%，
 
@@ -85,3 +85,5 @@ Very long keys are not a good idea. For instance a key of 1024 bytes is a bad id
 **大师**：善。交方案前若手痒想试剑，莫学人在生产环境 `KEYS *`——那不是独孤九剑，是拆自家屋檐。
 
 **大师**：好了，今天就到这里，你回去把完整的方案发出来吧。
+
+**小白**：弟子这便去写方案，明日交卷。恭送大师！
