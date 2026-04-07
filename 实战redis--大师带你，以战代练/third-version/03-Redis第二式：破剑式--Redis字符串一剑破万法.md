@@ -10,6 +10,10 @@
 
 **Redis 破剑式**
 
+**小白**：大师，弟子昨夜抄总诀抄到手抖，今日握鼠标竟有一丝运剑的错觉……
+
+**大师**：好现象。记住：key 过长，剑身便沉；value 过大，剑风便滞。破剑式练的是「分寸」二字，不是比谁能在 Redis 里塞下一部《四库全书》。
+
 **大师**：昨天我们学习了 Redis 独孤九剑的第一式：总诀式。第一式是大纲，没有具体的招式，但贯穿整个独孤九剑，以后你会慢慢体会到的！今天我们学习独孤九剑的第二式：破剑式。
 
 **大师**：既然是实战课程，那我们就开始实战吧。第一个实战项目是项目改造，目前用户信息存储在 MySQL 数据库 TUser 表中的，数据量约为 1000w，你来使用 Redis 增加缓存，提升用户信息接口的性能。要考虑的要点：1. 数据如何在 Redis 存储？2. 如何把 MySQL 中的数据批量导入到 Redis？3. 如何保证 Redis 和 MySQL 数据库的一致性？下午 3 点，来看你的方案吧。
@@ -27,6 +31,8 @@
 **小白**：谢谢大师，我去准备，下午 3 点再向大师学习。
 
 时间哒哒地流逝着，很快下午 3 点到了。小白也按时出现在大师面前。
+
+> **旁白**：此时窗外蝉鸣正噪，像极了监控里 QPS 曲线突然抬头的模样——小白浑然不觉，只觉得背上的汗一半是紧张，一半是机房余温。
 
 **大师**：说一下你是怎么做的吧？
 
@@ -64,7 +70,7 @@ Very long keys are not a good idea. For instance a key of 1024 bytes is a bad id
 
 4. 从 Redis 查询或者删除 Redis key 的时候要考虑使用 SCAN，而不要使用通配符。
 
-5.破剑式看着十八招，其实还有一些通用招式没有包含在里面如 DEL,DUMP,EXISTS,EXPIRE,EXPIREAT,KEYS,MIGRATE,MOVE,OBJECT,PERSIST,PEXPIRE,PEXPIREAT,PTTL,RANDOMKEY,RENAME,RENAMENX,RESTORE,SCAN,SORT,TOUCH,TTL,TYPE,UNLINK,WAIT 你可以细细研究。
+5. 破剑式看着十八招，其实还有一些通用招式没有包含在里面，如 DEL、DUMP、EXISTS、EXPIRE、EXPIREAT、KEYS、MIGRATE、MOVE、OBJECT、PERSIST、PEXPIRE、PEXPIREAT、PTTL、RANDOMKEY、RENAME、RENAMENX、RESTORE、SCAN、SORT、TOUCH、TTL、TYPE、UNLINK、WAIT，你可以细细研究。
 
 **番外：破剑式在源码里长什么样？**
 
@@ -74,4 +80,8 @@ Very long keys are not a good idea. For instance a key of 1024 bytes is a bad id
 
 **大师**：批量时用 **pipeline** 减少往返；超大 value 会拖慢单命令的分配与复制。读 `tryObjectEncoding` 一类逻辑（在 `object.c`）你能看到 Redis 怎样**自动挑选编码**省内存。这些和你在业务里选 key 大小、是否序列化整 blob，是同一套“带宽 + 分配次数”的账。
 
-好了，今天就到这里，你回去把完整的方案发出来吧。
+**小白**：弟子懂了——剑快不在嗓门大，在少挥空刀。
+
+**大师**：善。交方案前若手痒想试剑，莫学人在生产环境 `KEYS *`——那不是独孤九剑，是拆自家屋檐。
+
+**大师**：好了，今天就到这里，你回去把完整的方案发出来吧。

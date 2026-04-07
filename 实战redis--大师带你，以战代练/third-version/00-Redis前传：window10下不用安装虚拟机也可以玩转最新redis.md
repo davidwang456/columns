@@ -1,5 +1,7 @@
 **尝鲜 Redis 最新特性**
 
+> **话外音（可跳过）**：江湖传言，Windows 上装 Redis 像「在茶馆里点佛跳墙」——不是不能做，是厨子（官方安装包）版本太老，端上来还是三年陈酿。下文教你借 WSL 这口「外地灶」，照样把新菜炒熟。
+
 > **对照本仓库**：下文仍以 5.0.5 安装示例为主；你当前 clone 的源码树即为最新开发线，编译安装步骤相同（`make`、`src/redis-server`）。读完 `README.md` 与 `redis.conf` 里 6.x/7.x 新增模块与配置项，再回来看前传，会更容易把“版本差”对上号。**
 
 很多人问我自己的操作系统是 Windows 10，可是 Windows 下可安装的 Redis 版本最高为 3.2，想要验证 Redis 的诸如 Stream 特性的话，就无能为力了。如何尝试 Redis 的最新特性？
@@ -137,3 +139,7 @@ redis-cli -h 127.0.0.1 -p 6381
 ![](http://p6.toutiaoimg.com/large/pgc-image/96cd9f6c43ae4eb781a59f067ab92a73)
 
 设置 key，在 centos 客户端可以获取到。
+
+---
+
+> **收尾梗**：若按文操作仍连不上，先默念三遍「防火墙、端口、bind、protected-mode」，再查 `redis.conf`——比转发锦鲤灵验。

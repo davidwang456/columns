@@ -8,6 +8,8 @@
 
 可是很多人不知道 Redis 不仅有上面的几种数据结构，还内藏了内部的数据结构。即 Redis 可以分为外部数据结构和内部数据结构。
 
+> **吐槽役上线**：面试背「String Hash List Set ZSet」就像报菜名——好听，但端上桌的可能是 `embstr`、可能是 `quicklist`、也可能是「你以为是个 Hash 其实内核正在偷偷升级编码」。本文专治「背了类型却看不懂 `OBJECT ENCODING`」的胸闷。
+
 **1. 如何查看 Redis 的数据结构？**
 
 1.1 如何查看 Redis 的外部数据结构？
@@ -226,3 +228,5 @@ local:5>
 4. 阈值在 `redis.conf` 与 `server.h` 的 `redisServer` 中成对出现，调参即可观察 `OBJECT ENCODING` 变化
 
 5. 结合本仓库 `t_*.c` 阅读，能把命令时间复杂度从文档落到真实循环上
+
+> **看完仍懵怎么办**：正常。第一次看编码切换像看变戏法，多看几次 `OBJECT ENCODING` 与 `redis.conf` 阈值对照，戏法就变算术了。
