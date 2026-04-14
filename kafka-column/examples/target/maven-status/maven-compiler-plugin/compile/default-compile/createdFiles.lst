@@ -1,0 +1,6 @@
+org\example\column\ch04\ReplicationBasicsDemo.class
+org\example\column\ch06\ConsumerPollCommitDemo.class
+org\example\column\ch07\ConsumerGroupIntroDemo.class
+org\example\column\ch08\ConsumerOffsetsTopicIntroDemo.class
+org\example\column\ch03\PartitionOrderingDemo.class
+org\example\column\ch05\ProducerBasicsDemo.class
