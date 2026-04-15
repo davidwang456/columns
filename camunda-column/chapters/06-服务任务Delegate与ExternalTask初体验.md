@@ -117,3 +117,10 @@ BPMN 绑定（概念）：
 
 `delegateExpression` 引用 Bean 名；团队应统一前缀（如 `delegateXxx`）并在 Code Review 检查 **拼写** 与 **单测覆盖**。
 
+## 6. 课后作业（可选）
+
+1. 给 `CheckInventoryDelegate` 写 **单元测试**（纯 Java，无引擎）。  
+2. 增加 **依赖注入**（如 RestTemplate）并讨论事务边界。  
+3. 故意抛出异常，截 **完整栈**，标注引擎帧与业务帧。  
+4. 将实现改为 **External Task** 并对比运维面板差异。  
+5. 文档化 **下游超时**默认值与重试策略入口。  

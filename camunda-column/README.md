@@ -57,4 +57,4 @@
 | 33 | [chapters/33-Kubernetes与CICD.md](./chapters/33-Kubernetes与CICD.md) |  |
 | 34 | [chapters/34-Camunda8对照与迁移评估.md](./chapters/34-Camunda8对照与迁移评估.md) |  |
 
-未标注「试写」的章节可后续按 [CHAPTER-TEMPLATE.md](./CHAPTER-TEMPLATE.md) 扩写至 3000～5000 字。
+各章正文已按模板写成独立成篇；全章用工具统计 **字符数（含标点与代码块）最低约 3000**，若贵方 CMS 剔除代码块请以 **面授课 40 分钟左右** 为验收。早先「试写」章节为第 1、12、18、25 章，可作为难度与风格参考。
