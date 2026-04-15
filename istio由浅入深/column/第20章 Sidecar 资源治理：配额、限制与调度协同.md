@@ -8,29 +8,41 @@ chapter: 20
 
 ## 20.1 项目背景
 
-**Sidecar 不是“免费午餐”**
+**业务场景（拟真）：配额过了、Pod 却 Pending**
 
-每个 Pod 增加 `istio-proxy` 后，集群可调度容量与 Namespace 配额都会被消耗。若未在 LimitRange、ResourceQuota 中预留，易出现**注入成功但调度失败**或**节点资源碎片化**。
+团队把业务 `requests` 压到刚好过 **ResourceQuota**，启用网格注入后，**istio-proxy** 占用未计入心理账户 → **调度失败**或 **Quota 超额**。HPA 若按 Pod CPU 扩容，Sidecar 消耗算进副本，易 **过早扩容**；容量规划若忽略 Sidecar，则 **节点规划偏小**。
 
-**与 HPA、VPA 的耦合**
+**痛点放大**
 
-HPA 依据 CPU 扩容时，Sidecar 占用可能被算入工作负载 CPU，引发**过早扩容**；若忽略 Sidecar，又可能**低估节点需求**。需要平台视角统一建模。
+- **LimitRange + Quota**：需按「业务+Sidecar」联合建模。
+- **降配副作用**：proxy 过小可能增延迟、丢包。
 
-## 20.2 项目设计：大师提醒“算账单时别忘了代理”
+```mermaid
+flowchart LR
+  App[业务 requests] --> P[Pod 总量]
+  S[Sidecar requests] --> P
+  P --> Q[Quota/LimitRange]
+```
 
-**场景设定**：小白团队把应用 `requests` 调低以通过配额审核，结果大规模注入后集群出现 Pending。
+## 20.2 项目设计：小胖、小白与大师的「代理也算人头」
 
-**核心对话**：
+**第一轮**
 
-> **小白**：为什么同样的 YAML，注入前能调度，注入后不行？
+> **小胖**：不就多 128Mi 吗，能差多少？
 >
-> **大师**：把 Sidecar 的 `requests/limits` 加回 Pod 总量里算一遍。很多团队只算业务容器。
+> **小白**：注解覆盖和全局默认谁优先？HPA 目标要改吗？
 >
-> **小白**：能统一给 Sidecar 降配吗？
+> **大师**：**Pod 可调度资源 = 所有容器之和**（含 Sidecar）。注解可 per-workload 覆盖；全局在 IstioOperator。HPA 是否包含 sidecar CPU 取决于指标与对象，要 **统一复盘**。
 >
-> **大师**：可以，但要监控代理延迟与丢包。资源是性能的上游约束。
+> **大师 · 技术映射**：**sidecar.istio.io/proxy* ↔ 覆盖；全局 values.global.proxy.resources ↔ 默认。**
+
+**第二轮**
+
+> **大师**：压降 proxy 前做 **延迟与错误率** 基线对比。
 
 ## 20.3 项目实战：覆盖 Sidecar 资源
+
+**步骤 1：Pod 注解覆盖**
 
 ```yaml
 metadata:
@@ -53,6 +65,8 @@ spec:
             memory: 128Mi
 ```
 
+**步骤 2：观测与配额**
+
 ```bash
 kubectl describe quota -n production
 kubectl top pod -n production
@@ -60,27 +74,31 @@ kubectl top pod -n production
 
 ## 20.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **可预测调度**；**成本核算透明** |
-| **主要缺点** | **过度压降资源影响性能** |
-| **典型使用场景** | **大规模集群**、**多租户共享** |
-| **关键注意事项** | **LimitRange 默认值**；**DaemonSet 与节点容量** |
-| **常见踩坑经验** | **配额只算业务容器**；**忽略 init 容器短暂峰值** |
+**优点与缺点**
+
+| 维度 | 显式计入 Sidecar | 忽略 Sidecar |
+|:---|:---|:---|
+| 调度 | 可预测 | Pending/碎片化 |
+| 成本 | 透明 | 低估 |
+
+**适用场景**：多租户 Quota；大规模集群；FinOps。
+
+**不适用场景**：无注入（无此问题）。
+
+**典型故障**：Quota 满；proxy 过小延迟升；HPA 震荡。
+
+**思考题（参考答案见第21章或附录）**
+
+1. 为何 `kubectl describe pod` 在 Pending 时常能看到「Insufficient cpu」与 Sidecar 相关？
+2. 调低 `istio-proxy` 的 memory limit 可能引发哪类运行时问题？
+
+**推广与协作**：平台发布默认 Sidecar 规格；租户申报加注入；SRE 监控 OOMKilled。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：Sidecar 不是免费的：request/limit 与调度约束要纳入容量模型。
-
-### 趣味角
-
-每个 Pod 多一个 Sidecar，就像每桌客人多一副公筷——卫生好了，但洗碗量和摆台空间都上去了。
-
-### 实战演练
-
-对典型微服务 Pod 统计 `kubectl top pod` 中 app 与 istio-proxy 的 CPU/内存占比；用 `ProxyConfig` 或注解收紧资源后观察 HPA 行为。
+> **本章导读**：容量模型含 Sidecar；**实战演练**：top 对比 app/proxy；**深度延伸**：HPA 与 VPA。
 
 ### 深度延伸
 

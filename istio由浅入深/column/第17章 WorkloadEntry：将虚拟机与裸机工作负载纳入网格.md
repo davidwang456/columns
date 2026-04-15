@@ -8,29 +8,41 @@ chapter: 17
 
 ## 17.1 项目背景
 
-**Kubernetes 并非工作负载的全部**
+**业务场景（拟真）：计费进程还在 VM，但要和网格里同一套 mTLS**
 
-企业存量系统大量运行在虚拟机或物理机上，短期内无法容器化。若这些系统需要与网格内服务统一 mTLS、指标与路由，需要一种**非 Pod 形式的工作负载抽象**。
+遗留 **计费** 跑在固定 IP 的 VM 上，短期无法容器化，但安全要求与 K8s 内 **billing** 服务 **同一 SPIFFE 身份平面**、同一策略。纯 **ServiceEntry** 只解决「外部主机名解析」；**WorkloadEntry** 把该 VM **登记为网格成员**（地址、标签、端口、SA），常与 **WorkloadGroup**、VM 侧 **Sidecar** 安装配合，做渐进上云。
 
-**ServiceEntry 与 WorkloadEntry 的分工**
+**痛点放大**
 
-ServiceEntry 将**外部服务端点**注册进网格；WorkloadEntry 则描述**可承载在网格外但属于同一身份平面**的工作负载（例如固定 IP 上的进程），常与 `WorkloadGroup`、智能 DNS 结合，实现渐进式迁移。
+- **身份割裂**：无 WE 则只能当「匿名外网」，难做细粒度 Authz。
+- **IP/标签漂移**：变更未同步 WE → 流量黑洞或错配。
+- **运维成本**：主机上装代理与升级与 Pod 不同频。
 
-## 17.2 项目设计：大师给老系统一张“临时身份证”
+```mermaid
+flowchart LR
+  WE[WorkloadEntry\n地址+标签] --> SE[ServiceEntry\n服务名]
+  SE --> Mesh[与 Pod 同策略面]
+```
 
-**场景设定**：遗留计费进程跑在指定 VM 上，小白希望 Sidecar 以进程或容器形式部署在该主机，与网格内 `billing-service` 互访时使用统一 SPIFFE ID。
+## 17.2 项目设计：小胖、小白与大师的「编制内 VM」
 
-**核心对话**：
+**第一轮**
 
-> **小白**：虚拟机里没有 Pod，怎么注入 Sidecar？
+> **小胖**：VM 上再装个 Sidecar，运维不是双倍活吗？
 >
-> **大师**：可以用 **Sidecar 安装在 VM 上**（或使用进程级代理），再用 WorkloadEntry 把这台机器声明为网格成员。关键是**身份**与**地址**要对上：SPIFFE ID、IP、端口、标签一致。
+> **小白**：WorkloadEntry 和 ServiceEntry 同时出现时谁定义 endpoints？
 >
-> **小白**：和纯 ServiceEntry 有何区别？
+> **大师**：**WorkloadEntry** 描述「这台机器是谁、端口与标签」；**ServiceEntry** 仍负责**服务名与协议**。`workloadSelector` 把 WE 挂到同一逻辑服务下。VM 上需部署 **istio-proxy**（或等价），否则只有目录没有执行面。
 >
-> **大师**：ServiceEntry 更像“外部服务目录”；WorkloadEntry 更像“这名外部成员也是我们编制内的同事”，可与 `WorkloadGroup` 一起做生命周期管理。
+> **大师 · 技术映射**：**WorkloadEntry ↔ 网格外成员的 xDS 端点；SPIFFE ↔ ServiceAccount。**
+
+**第二轮**
+
+> **大师**：把 **IP 变更、SA 轮换** 纳入变更单，否则与 Pod 混用服务名时会「偶发连错」。
 
 ## 17.3 项目实战：WorkloadEntry 示例
+
+**步骤 1：WorkloadEntry**
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
@@ -67,21 +79,35 @@ spec:
       app: billing
 ```
 
+**步骤 2**：确认 VM 侧 Sidecar 已安装且与 `istio-system` 控制面连通；`istioctl proxy-status` 可见 VM 代理（若适用）。
+
 ## 17.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **平滑纳管遗留系统**；**统一身份与策略** |
-| **主要缺点** | **主机级部署与升级成本**；**标签与 IP 漂移需治理** |
-| **典型使用场景** | **容器与 VM 共存**、**分阶段上云** |
-| **关键注意事项** | **SPIFFE ID 与 ServiceAccount 映射**；**防火墙与 Sidecar 端口** |
-| **常见踩坑经验** | **地址变更未同步 WE**；**健康检查与注册信息不一致** |
+**优点与缺点**
+
+| 维度 | WorkloadEntry + VM Sidecar | 仅 ServiceEntry |
+|:---|:---|:---|
+| 身份 | SPIFFE 一致 | 多为匿名外网 |
+| 运维 | 重 | 轻 |
+
+**适用场景**：VM/裸金属渐进纳管；混合云。
+
+**不适用场景**：可快速容器化且无身份诉求（可直接迁 Pod）。
+
+**典型故障**：地址未更新；selector 不匹配；防火墙阻断 xDS。
+
+**思考题（参考答案见第18章或附录）**
+
+1. `workloadSelector` 与 `WorkloadEntry.labels` 如何协作？
+2. 为何仅有 ServiceEntry 不足以让 VM 获得与 Pod 相同的 mTLS 身份？
+
+**推广与协作**：平台维护 WE 模板；网络放行；应用团队申报 IP/端口变更。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：虚拟机不是二等公民：WorkloadEntry 让老系统与 Pod 并肩出现在同一服务名下。
+> **本章导读**：VM 与 Pod 同服务名；**实战演练**：改 IP 观察端点变化；**深度延伸**：WorkloadGroup 生命周期。
 
 ### 趣味角
 

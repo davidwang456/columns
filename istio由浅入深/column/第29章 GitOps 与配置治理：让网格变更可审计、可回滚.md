@@ -8,25 +8,37 @@ chapter: 29
 
 ## 29.1 项目背景
 
-**kubectl apply 救不了“谁改了 Gateway”**
+**业务场景（拟真）：谁改了生产 Gateway？**
 
-生产网格配置应进入版本库，通过 Pull Request 评审、流水线校验（`istioctl analyze`）、再同步到集群。否则环境漂移与口头约定会让排障变成罗生门。
+线上 VirtualService 与 Git 不一致，事故复盘时 **无人认领变更**。GitOps 要求：**Git 为唯一事实来源**、PR 评审、`istioctl analyze` 门禁、Argo CD/Flux **对账**，支持 **一键 revert**。密钥用 **Sealed Secrets/SOPS**，避免明文进库。
 
-## 29.2 项目设计：大师推荐“单一事实来源”
+**痛点放大**
 
-**场景设定**：小白团队使用 Argo CD 管理集群，希望 Istio 策略也纳入同一套流程。
+- **口头 apply**：环境漂移、不可审计。
+- **多环境复制粘贴**：staging 与 prod 差异常失控。
 
-**核心对话**：
+```mermaid
+flowchart LR
+  G[Git PR] --> CI[analyze/validate]
+  CI --> CD[同步集群]
+  CD --> D[Drift 监控]
+```
 
-> **小白**：GitOps 对 Istio 有用吗？
+## 29.2 项目设计：小胖、小白与大师的「单一事实来源」
+
+**第一轮**
+
+> **小胖**：多一道 Git，不是多一道麻烦吗？
 >
-> **大师**：非常有用。Istio 的配置本质是 Kubernetes CRD，**最适合**声明式流水线。
+> **小白**：Kustomize 还是 Helm？Secret 咋进流水线？
 >
-> **小白**：多环境怎么管理？
+> **大师**：Istio CRD **天生适合 GitOps**。Overlay/Values 管环境差；Secret 用 **Sealed/SOPS** 或外部 Secret Operator。PR 即评审与审计记录。
 >
-> **大师**：用 Kustomize Overlay 或 Helm Values，把差异限制在**少量文件**，避免复制粘贴。
+> **大师 · 技术映射**：**Git ↔ 审计；analyze ↔ 门禁；CD ↔ 对账。**
 
 ## 29.3 项目实战：流水线检查示例
+
+**步骤 1：本地/CI 校验**
 
 ```bash
 istioctl analyze -f manifests/ -A
@@ -41,19 +53,31 @@ kubectl kustomize overlays/prod | istioctl validate -f -
 
 ## 29.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **可审计**、**可回滚**、**评审协作** |
-| **主要缺点** | **流水线建设成本** |
-| **典型使用场景** | **多集群**、**多团队** |
-| **关键注意事项** | **秘密信息管理（Sealed Secrets/SOPS）** |
-| **常见踩坑经验** | **Git 与集群状态双向打架** |
+**优点与缺点**
+
+| 维度 | GitOps | 手工 apply |
+|:---|:---|:---|
+| 审计 | 强 | 弱 |
+| 成本 | 流水线建设 | 低 |
+
+**适用场景**：多集群；多团队；合规。
+
+**不适用场景**：单人实验环境（可简化）。
+
+**典型故障**：漂移；Secret 泄漏；CI 未跑 analyze。
+
+**思考题（参考答案见第30章或附录）**
+
+1. 为何「集群手动改、Git 后补」会破坏 GitOps 信任模型？
+2. `istioctl analyze` 放在 CI 的哪一阶段最合适？
+
+**推广与协作**：平台管流水线；开发提 PR；安全审 Secret 策略。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：GitOps 让网格配置和应用一样：可 review、可回滚、可审计。
+> **本章导读**：Git=合同；**实战演练**：analyze 进 CI；**深度延伸**：漂移检测。
 
 ### 趣味角
 

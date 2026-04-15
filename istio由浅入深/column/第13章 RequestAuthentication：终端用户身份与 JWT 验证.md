@@ -8,31 +8,45 @@ chapter: 13
 
 ## 13.1 项目背景
 
-**东西向 mTLS 与南北向用户身份是两件事**
+**业务场景（拟真）：统一入口上的「用户是谁」**
 
-PeerAuthentication 解决的是**服务与服务之间**的传输层身份（SPIFFE），但许多攻击面来自**终端用户**——浏览器、移动 App、合作伙伴系统调用的 API。仅依赖网络位置或 IP 白名单已无法满足零信任要求，需要把 **JWT / OIDC** 等可验证的终端身份纳入策略体系。
+管理后台与开放 API 共用 `api-gateway`：安全要求 **OAuth2/OIDC 颁发的 JWT** 在入口即验签，且 **`/admin` 仅内部员工组**可访问。仅 mTLS 只能证明「订单服务在调支付」，无法证明「是哪个员工或租户」——**终端身份**必须靠 **RequestAuthentication**（验令牌）+ **AuthorizationPolicy**（按 claim 授权）。
 
-**应用内鉴权与网格鉴权的边界**
+**痛点放大**
 
-传统做法是在每个服务内解析 JWT、校验签名与过期时间，导致库版本分裂、密钥轮换困难。Istio 的 RequestAuthentication 将**身份验证**（Authentication）与**授权**（Authorization，见 AuthorizationPolicy）分层：前者验证“令牌是否可信、主体是谁”，后者决定“允许执行哪些操作”。
+- **重复造轮子**：每个服务自己验 JWT，密钥轮换与 issuer 漂移难统一。
+- **401 vs 403**：认证失败与授权拒绝需分层排障。
+- **预检与令牌**：浏览器 CORS 预检（OPTIONS）与 Bearer 共存需规划。
 
-## 13.2 项目设计：大师区分“你是谁”和“你能做什么”
+```mermaid
+flowchart LR
+  REQ[RequestAuthentication\n验 JWT] --> CTX[claims 注入]
+  CTX --> AUTHZ[AuthorizationPolicy\n按路径/claim]
+```
 
-**场景设定**：管理后台与开放 API 共用同一 `api-gateway` 入口，小白希望先统一校验 OAuth2 颁发的 JWT，再用 AuthorizationPolicy 限制 `/admin` 路径仅内部员工身份可访问。
+## 13.2 项目设计：小胖、小白与大师的「你是谁 vs 你能做什么」
 
-**核心对话**：
+**第一轮**
 
-> **小白**：我们已经启用了 mTLS，为什么还要 JWT？
+> **小胖**：网关验一遍 JWT，后面服务再验一遍，算双份保险还是双份浪费？
 >
-> **大师**：mTLS 回答的是**服务身份**；JWT 回答的是**用户或客户端身份**。没有 JWT，网格只知道“A 服务调用了 B 服务”，不知道“是哪位用户发起的”。
+> **小白**：`jwksUri` 挂了会怎样？`forwardOriginalToken` 要不要开？
 >
-> **小白**：RequestAuthentication 具体做什么？
+> **大师**：RequestAuthentication 在 **Sidecar** 执行验签与元数据提取；**AuthorizationPolicy** 用 `request.auth.claims[...]` 做授权。JWKS 可用性要做缓存与告警；是否转发原 Token 取决于后端是否还要读完整 JWT。
 >
-> **大师**：它告诉 Sidecar：去哪个 JWKS 拉公钥、信任哪些 issuer、audience 要匹配什么。验证通过后，会把身份声明注入请求上下文，供后续的 AuthorizationPolicy 使用。
+> **大师 · 技术映射**：**RequestAuthentication ↔ JWT 验证；AuthorizationPolicy ↔ 基于 claims 的 L7 授权。**
 
-**类比阐释**：mTLS 像员工工牌进出园区；JWT 像具体业务系统的登录会话——园区门禁通过了，还要看你有没有进财务室的授权。
+**第二轮**
+
+> **小白**：issuer/aud 写错会怎样？
+>
+> **大师**：典型 **401**——认证阶段失败；若认证通过但策略拒绝，多为 **403**。排障时先看响应码与 `istio` 访问日志。
+
+**类比**：mTLS 像园区工牌；JWT 像业务系统登录态——进门与进财务室是两道逻辑。
 
 ## 13.3 项目实战：RequestAuthentication 与 AuthorizationPolicy 组合
+
+**步骤 1：RequestAuthentication + AuthorizationPolicy**
 
 ```yaml
 apiVersion: security.istio.io/v1beta1
@@ -73,30 +87,42 @@ spec:
         paths: ["/public/*"]
 ```
 
+**步骤 2：验证**
+
 ```bash
 # 验证 JWT 校验是否生效（需携带有效 Bearer Token）
 curl -H "Authorization: Bearer $TOKEN" https://api.example.com/admin/health -vk
 ```
 
+**可能踩坑**：issuer/aud 与 IdP 不一致；时钟 skew；未处理 OPTIONS。
+
 ## 13.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **集中验证**、**与授权解耦**、**减少应用重复代码** |
-| **主要缺点** | **JWKS 可用性**、**时钟偏差**、**令牌转发与隐私** |
-| **典型使用场景** | **API 网关统一登录态**、**多租户 SaaS**、**与 IdP 集成** |
-| **关键注意事项** | **issuer/aud 严格匹配**；**轮换密钥时的缓存**；**OPTIONS 预检与 JWT 共存** |
-| **常见踩坑经验** | **401/403 混淆**：认证失败与授权拒绝日志不同；**未 forwardOriginalToken 导致后端仍需自行解析** |
+**优点与缺点（与应用内验签对比）**
+
+| 维度 | RequestAuthentication + Authz | 每服务自验 JWT |
+|:---|:---|:---|
+| 一致性 | 入口统一 | 库与密钥分裂 |
+| 运维 | JWKS 一处配置 | 多处轮换 |
+
+**适用场景**：API 网关、BFF、多租户 SaaS。
+
+**不适用场景**：无 JWT 的内网 RPC；需复杂外部 ABAC（考虑 ext-authz）。
+
+**典型故障**：401（验签失败）；403（claim 不满足）；JWKS 拉取失败。
+
+**思考题（参考答案见第14章或附录）**
+
+1. 仅有 RequestAuthentication、无 AuthorizationPolicy 时，未携带 JWT 的请求通常如何被处理（需结合默认拒绝语义说明）？
+2. `forwardOriginalToken: true` 的主要用途与隐私风险各是什么？
+
+**推广与协作**：安全对接 IdP 与 audience；开发列路径与 claim 矩阵；测试覆盖 401/403/过期令牌。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：终端用户身份进网格：JWT 校验是 API 现代化的标配。
-
-### 趣味角
-
-没有 RequestAuthentication 的 JWT 校验，就像只认复印件不认公章——网关验了，服务间转发时 claim 可能被伪造或丢失。
+> **本章导读**：验签与授权分层；**实战演练**：对比有效/无效/过期 Token；**深度延伸**：401/403 与 ext-authz。
 
 ### 实战演练
 

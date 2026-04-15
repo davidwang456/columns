@@ -8,33 +8,46 @@ chapter: 9
 
 ## 9.1 项目背景
 
-**配置即代码之后的“编译期”**
+**业务场景（拟真）：升级前夜与「能 apply 不等于对」**
 
-Kubernetes 与 Istio 将运维意图声明化，但错误仍会发生：Gateway 与 VirtualService 的 hosts 不一致、子集标签漂移、证书将过期。需要类似编译器的**静态分析**与发布前的**一致性检查**，把问题拦在变更窗口之前。
+平台组计划把小版本升级 Istio：变更单已写好，但没人敢点「发布」——怕 CRD 弃用、怕 VirtualService 引用幽灵子集、怕证书窗口内握手异常。**`kubectl apply` 成功**只代表对象入库，**语义正确**要靠 `istioctl analyze`、proxy-config 与 tls-check 交叉验证。本章建立 **SRE 体检表** 与 **revision 金丝雀** 意识。
 
-**升级焦虑：控制平面与数据平面版本矩阵**
+**痛点放大**
 
-Istio 以较快节奏演进，企业环境往往多团队、多命名空间共用同一控制平面。升级失败会导致配置无法下发、Sidecar 与控制平面不兼容。建立**升级前检查清单**、**金丝雀控制平面（revision）**与**回滚预案**，是网格 SRE 的基本功。
+- **静态错误**：hosts 不对齐、subset 不存在，运行时表现为 404/503。
+- **版本矩阵**：istioctl 与集群 Minor 不一致时，analyze 结果不可信。
+- **升级回滚**：无 revision 时全集群「一刀切」风险高。
 
-## 9.2 项目设计：大师给小白一张“上线前体检表”
+```mermaid
+flowchart LR
+  A[istioctl analyze] --> B[静态问题]
+  C[proxy-config] --> D[数据面真相]
+  E[tls-check] --> F[安全协商]
+```
 
-**场景设定**：小白准备把 Istio 从当前补丁版本升级到小版本，他担心影响现网，需要一套可重复的检查流程。
+## 9.2 项目设计：小胖、小白与大师的「上线前体检表」
 
-**核心对话**：
+**第一轮**
 
-> **小白**：我能不能在升级前先知道有哪些配置冲突？
+> **小胖**：升级不就是换个镜像？有啥好查的？
 >
-> **大师**：用 `istioctl analyze`。它会在集群里扫一遍资源，提示 VirtualService 与 DestinationRule 的不一致、缺失的引用、与版本相关的弃用项。把它接进 CI，比在群里喊“谁改了我的 Gateway”有效得多。
+> **小白**：`analyze` 和 `kubectl get` 差在哪？revision 标签怎么回滚？
 >
-> **小白**：升级时业务会断吗？
+> **大师**：`analyze` 做**跨资源引用与弃用 API** 检查；Sidecar 真实配置要看 `proxy-config`。升级先读 Release Notes，非生产并行装 **revision**，命名空间 `istio.io/rev` 试点再推广。
 >
-> **大师**：控制平面滚动更新时，数据平面 Sidecar 仍在跑，但**新特性与 CRD 变更**需要读 Release Notes。推荐先在非生产用**revision 并行安装**，用命名空间标签把试点应用切到新 revision，验证无误再推广。
+> **大师 · 技术映射**：**analyze ↔ 配置语义；proxy-status ↔ 同步状态；revision ↔ 控制面多版本共存。**
 
-**类比阐释**：`istioctl analyze` 像车辆年检——刹车灯、尾气、胎压一起查；revision 升级则像保留旧车型生产线的同时试制新款，小批量上路再扩产。
+**第二轮**
+
+> **小白**：analyze 干净为什么还 503？
+>
+> **大师**：静态分析覆盖不了**运行时**——端点不健康、网络策略、上游过载，要日志与 metrics。
+
+**类比**：analyze 像年检；revision 像新款试产车小批量上路。
 
 ## 9.3 项目实战：分析与升级前检查
 
-**集群配置诊断**
+**步骤 1：集群配置诊断**
 
 ```bash
 # 全集群分析（关注 Error 与 Warning）
@@ -47,7 +60,7 @@ istioctl analyze -n production
 istioctl analyze -o json | jq '.[] | select(.severity=="Error")'
 ```
 
-**配置与证书抽检**
+**步骤 2：配置与证书抽检**
 
 ```bash
 istioctl proxy-status
@@ -55,7 +68,7 @@ istioctl authn tls-check deployment/order-service -n production
 istioctl x auth check -n production
 ```
 
-**revision 并行（概念示例）**
+**步骤 3：revision 并行（概念示例）**
 
 ```bash
 # 安装新版本控制平面（具体参数以官方文档为准）
@@ -65,33 +78,35 @@ istioctl install --set revision=canary -y
 kubectl label namespace pilot-ns istio.io/rev=canary --overwrite
 ```
 
+**测试验证**：故意制造错误配置后 `analyze` 应报 Error；修复后 Error 消失；`proxy-status` 显示 NOT SENT 需排查。
+
 ## 9.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **前置发现问题**；**可脚本化**；**与 GitOps 友好** |
-| **主要缺点** | **静态分析无法覆盖所有运行时问题**；**需保持 istioctl 与集群版本匹配** |
-| **典型使用场景** | **变更前 CI 门禁**；**大规模故障后的配置审计**；**升级演练** |
-| **关键注意事项** | **关注弃用 API**；**多 revision 时的标签继承**；**Webhook 与 CRD 先后升级顺序** |
-| **常见踩坑经验** | **analyze 无报错但流量异常**：需结合 proxy-config；**升级后 Sidecar 未滚动**：需触发 Pod 重建 |
+**优点与缺点**
+
+| 维度 | istioctl 工具链 | 仅 kubectl |
+|:---|:---|:---|
+| 语义检查 | analyze 跨资源 | 无 |
+| 数据面 | proxy-config _dump_ | 无原生等价 |
+
+**适用场景**：CI 门禁；升级演练；事故后审计。
+
+**不适用场景**：纯运行时性能问题（需 profiling）。
+
+**典型故障**：analyze 通过仍异常；升级后未重建 Pod 导致版本不一致。
+
+**思考题（参考答案见第10章或附录）**
+
+1. `istioctl proxy-status` 中 `NOT SENT` 可能表示什么？
+2. 为何升级控制面后有时必须滚动工作负载 Pod？
+
+**推广与协作**：平台把 analyze 接 CI；开发提交前本地跑；变更窗口双人复核 proxy-status。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：istioctl 是网格的「听诊器」：analyze、proxy-config、describe 构成排障三角。
-
-### 趣味角
-
-把 `istioctl analyze` 想成 linter：`kubectl apply` 不报错不代表配置语义对——analyze 专门抓「能跑但不对」的诡异组合。
-
-### 实战演练
-
-制造一个故意错误的 VirtualService（例如指向不存在的 subset），跑 `istioctl analyze -n ...` 记录输出；再用 `istioctl proxy-config` 与 `istioctl describe pod` 交叉验证。
-
-### 深度延伸
-
-升级前如何做 **revision 金丝雀**：列举 `istio.io/rev` 标签、`istioctl tag` 与 `helm upgrade` 三种路径的适用场景。
+> **本章导读**：听诊三角 = analyze + proxy-config + describe；**实战演练**：故意错误 VS；**深度延伸**：revision 金丝雀路径。
 
 ---
 

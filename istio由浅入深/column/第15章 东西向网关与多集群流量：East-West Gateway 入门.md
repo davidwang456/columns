@@ -8,31 +8,47 @@ chapter: 15
 
 ## 15.1 项目背景
 
-**单集群边界被打破之后的“新南北向”**
+**业务场景（拟真）：双活集群里的 `catalog` 互访**
 
-当组织采用多集群部署（异地容灾、部门隔离、合规分区）时，集群之间的流量不再是“外部用户入口”那么简单，而是**东西向跨集群**调用。若仍依赖公网或扁平 VPN，既难做统一策略，也难观测。Istio 通过 **East-West Gateway** 将集群间流量纳入同一套 mTLS、路由与可观测体系。
+同城 **cluster-a / cluster-b** 各跑一套 `catalog`，业务希望 **故障时互调**，且流量仍走 **mTLS、可观测、可策略**。公网裸连或纯 VPN 往往只有连通，没有「服务身份 + 指标分解」。**East-West Gateway** 把**集群间 RPC** 变成网格内的「第二类南北向」——先过 **E-W 门脸**，再进本集群 Sidecar。
 
-**与 ServiceEntry、多集群 DNS 的关系**
+**痛点放大**
 
-跨集群首先要解决**服务发现**与**证书信任**。实践中常与 CoreDNS、`istioctl x create remote secret`、多集群控制平面拓扑结合。本章聚焦流量入口形态与网关职责，具体多集群安装以官方多集群指南为准。
+- **发现与命名**：`*.svc.cluster.local` 默认不跨集群，需多集群 DNS / 全局服务名方案。
+- **信任**：根 CA、中间 CA 与 **remote secret** 需平台一次性做对。
+- **与 Ingress 混淆**：对外用户走 Ingress；集群间走 East-West。
 
-## 15.2 项目设计：大师画一张“集群间收费站”
+```mermaid
+flowchart LR
+  A[cluster-a Sidecar] --> EW[East-West Gateway\n对端集群]
+  EW --> B[cluster-b Service]
+```
 
-**场景设定**：同城双集群 `cluster-a` 与 `cluster-b` 需要互访 `catalog` 服务，小白希望互访流量也经过 mTLS，并能在 Grafana 中看到按集群维度分解的指标。
+**说明**：完整多集群安装步骤以 [Istio 多集群文档](https://istio.io/latest/docs/setup/install/multicluster/) 为准；本章聚焦 **Gateway/VS 概念**。
 
-**核心对话**：
+## 15.2 项目设计：小胖、小白与大师的「集群间收费站」
 
-> **小白**：我们两个集群里都有 catalog，互访时怎么知道走哪一个？
+**第一轮**
+
+> **小胖**：多集群不就是 VPN 打通吗？还要专门网关？
 >
-> **大师**：先定**拓扑**：是共享控制平面还是多控制平面。无论哪种，East-West Gateway 都是集群间流量的**入口门面**——就像高速互通的收费站，先过站再分流。
+> **小白**：共享控制面 vs 多控制面选哪个？East-West 端口 15443 干啥用？
 >
-> **小白**：和 Ingress Gateway 有什么不一样？
+> **大师**：连通≠治理。E-W Gateway 提供 **集群间 mTLS 入口** 与路由挂载点，便于和网格策略一致。拓扑（单/多控制面）决定 **证书与 secret 分发** 方式；15443 为常见 **ISTIO_MUTUAL** 监听（以实际安装为准）。
 >
-> **大师**：Ingress 主要面向**来自集群外用户**；East-West 面向**来自其他集群的服务**。职责类似，但证书、DNS、路由往往由**平台团队**统一编排。
+> **大师 · 技术映射**：**East-West Gateway ↔ 跨集群 TLS 入口；mesh + gateway 绑定 ↔ 集群内与跨集群路由。**
 
-**类比阐释**：Ingress 像城市机场；East-West 像城际高铁站的换乘口——都检票，但客流来源与安检策略不同。
+**第二轮**
+
+> **小白**：和 Ingress 区别？
+>
+> **大师**：**Ingress**：公网/边缘用户；**East-West**：集群间服务流量，常由平台统一 DNS 与防火墙策略。
+
+**类比**：Ingress 像机场；East-West 像高铁站换乘口。
 
 ## 15.3 项目实战：East-West Gateway 概念配置
+
+**步骤 1：Gateway（集群间监听）**
 
 ```yaml
 apiVersion: networking.istio.io/v1beta1
@@ -54,6 +70,8 @@ spec:
     - "*.local"
 ```
 
+**步骤 2：VirtualService 绑定 mesh 与 eastwest**
+
 ```yaml
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -74,29 +92,41 @@ spec:
           number: 8080
 ```
 
+**步骤 3：验证**
+
 ```bash
 istioctl proxy-config cluster deploy/catalog -n catalog | grep -i global
 ```
 
+**可能踩坑**：`gateways` 列表未包含 eastwest；对端服务未导出；防火墙未放行 15443。
+
 ## 15.4 项目总结
 
-| 维度 | 详细分析 |
-|:---|:---|
-| **核心优点** | **集群间流量纳入网格策略**；**与多集群拓扑解耦展示** |
-| **主要缺点** | **运维复杂度高**；**DNS 与证书配置易错** |
-| **典型使用场景** | **异地多活**、**测试与生产隔离集群互访** |
-| **关键注意事项** | **控制平面拓扑选择**；**remote secret 与 kubeconfig 权限** |
-| **常见踩坑经验** | **服务名与 namespace 不一致**；**忘记为东西向开放端口** |
+**优点与缺点**
+
+| 维度 | East-West + 网格 | 仅 VPN 连通 |
+|:---|:---|:---|
+| mTLS/策略 | 统一 | 无 |
+| 运维 | 高 | 中 |
+
+**适用场景**：多活、隔离集群互访、合规分区。
+
+**不适用场景**：单集群（无需 E-W）。
+
+**典型故障**：remote secret 错误；DNS 无法解析全局服务名；TLS 握手失败。
+
+**思考题（参考答案见第16章或附录）**
+
+1. 为何 East-West Gateway 常与 `ISTIO_MUTUAL` 一同出现？
+2. 多集群场景下，`VirtualService` 同时写 `mesh` 与 `istio-system/east-west-gateway` 的意图是什么？
+
+**推广与协作**：平台负责拓扑与证书；网络放行端口；应用使用全局服务名。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：多集群时代，东西向网关是集群间握手的「外交官」。
-
-### 趣味角
-
-North-South 是城市大门，East-West 是城际高速——没有 E-W Gateway，集群间就像没收费站和路牌，车能开但没人记账。
+> **本章导读**：集群间握手门面；**实战演练**：`proxy-config cluster` 查 global；**深度延伸**：单/多控制面选型。
 
 ### 实战演练
 

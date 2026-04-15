@@ -8,13 +8,40 @@ chapter: 23
 
 ## 23.1 项目背景
 
-控制平面与数据平面的通信机制、动态配置的热更新需求、大规模集群的配置分发挑战，这些技术深度话题是理解Istio底层原理的关键。
+**业务场景（拟真）：线上行为与 YAML 不一致，要「看见 Envoy 真相」**
 
-## 23.2 项目设计：大师揭秘配置魔法
+排障深入到「为什么这条路由没生效」时，只看 Kubernetes CRD 不够，需要理解 **istiod → xDS → Envoy** 的映射：**LDS**（监听器）、**RDS**（路由）、**CDS**（集群）、**EDS**（端点）、**SDS**（证书）。大规模集群还存在 **推送延迟与增量 xDS** 问题。
 
-**场景设定**：小白好奇配置如何实时生效而不重启服务。
+**痛点放大**
+
+- **配置自认为对**：CRD 对了但数据面旧快照。
+- **EnvoyFilter 误用**：升级后 patch 不兼容。
+
+```mermaid
+flowchart LR
+  I[istiod] -->|xDS| E[Envoy]
+  E --> L[LDS/RDS/CDS/EDS/SDS]
+```
+
+## 23.2 项目设计：小胖、小白与大师的「配置魔法」
+
+**第一轮**
+
+> **小胖**：不就是个代理吗，为啥要五个字母缩写？
+>
+> **小白**：改完 VirtualService，`proxy-config route` 多久变？全量和 Delta 啥区别？
+>
+> **大师**：xDS 把**监听器、路由、集群、端点、证书**拆开下发，才能细粒度热更新。延迟用 `proxy-status` 与日志观察；Delta 减少带宽与 CPU，但心智更复杂。
+>
+> **大师 · 技术映射**：**CRD ↔ istiod 翻译 ↔ xDS 资源 ↔ Envoy 运行时。**
+
+**第二轮**
+
+> **大师**：**EnvoyFilter** 是最后手段：先确认能否用原生 CRD 表达。
 
 ## 23.3 项目实战：xDS调试与自定义
+
+**步骤 1：dump 与理解结构**
 
 ```bash
 # 查看完整Envoy配置
@@ -23,8 +50,11 @@ istioctl proxy-config all <pod-name> -o json > envoy_config.json
 # 理解动态配置
 cat envoy_config.json | jq 'keys'
 # 输出：bootstrap, clusters, dynamicListeners, dynamicRouteConfigs, endpoints, listeners, routes, secrets
+```
 
-# 自定义EnvoyFilter
+**步骤 2（慎用）：EnvoyFilter 示例**
+
+```yaml
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
 metadata:
@@ -46,32 +76,34 @@ spec:
             end
 ```
 
+**测试验证**：`istioctl proxy-config cluster` / `route` / `endpoint` 与 CRD 对齐交叉验证。
+
 ## 23.4 项目总结
 
-| 维度 | 要点 |
-|:---|:---|
-| **优点** | 动态更新、无中断变更、灵活扩展 |
-| **缺点** | 配置复杂性、版本一致性、调试门槛 |
-| **关键场景** | 高级流量管理、自定义协议、性能优化 |
-| **踩坑经验** | 配置漂移、版本回滚、资源限制 |
+**优点与缺点**
+
+| 维度 | 懂 xDS 排障 | 仅看 CRD |
+|:---|:---|:---|
+| 深度 | 可定位翻译层 | 易卡住 |
+
+**适用场景**：高级定制；性能优化；疑难路由。
+
+**不适用场景**：常规 CRD 可表达的需求（避免 EnvoyFilter）。
+
+**典型故障**：配置未推送；Filter 版本不兼容；secret 未下发。
+
+**思考题（参考答案见第24章或附录）**
+
+1. 简述 LDS 与 RDS 在 Envoy 中的职责分工。
+2. 为何生产环境对 EnvoyFilter 持谨慎态度？
+
+**推广与协作**：架构师/资深开发读；变更评审含 EnvoyFilter；SRE 建立 proxy-config 取证模板。
 
 ---
 
 ## 编者扩展
 
-> **本章导读**：xDS 是 Envoy 的「电台频道」：听懂 LDS/RDS/CDS/EDS 才能读懂 `proxy-config`。
-
-### 趣味角
-
-把 xDS 想成 RPG 装备面板：LDS 是耳朵听哪（listener），RDS 是地图路线（route），CDS 是队友列表（cluster），EDS 是队友实时坐标。
-
-### 实战演练
-
-选一个 cluster，从 `proxy-config cluster` 追到 `endpoint`，再对照 Kubernetes Endpoints；用 `istioctl pc secret` 看证书与 SAN。
-
-### 深度延伸
-
-Delta xDS 与全量推送对控制面 CPU 与数据面内存抖动的影响。
+> **本章导读**：LDS/RDS/CDS/EDS；**实战演练**：cluster→endpoint 追链；**深度延伸**：Delta xDS。
 
 ---
 
