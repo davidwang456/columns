@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CH = ROOT / "chapters"
+_SCRIPTS = Path(__file__).resolve().parent
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
+from chapter_three_role_openers import (  # noqa: E402
+    CROSS_DEPT_BLOCK,
+    OPS_TEST_BLOCK,
+    READ_HINT_BLOCK,
+    XIAO_PANG_LINE,
+)
 
 COMMON_APPEND = """
 
@@ -250,6 +260,8 @@ def build(
     summ: str,
 ) -> str:
     extra = extra_sections(n, title)
+    xp = XIAO_PANG_LINE.get(n, "")
+    diag_full = f"{xp}\n\n{diag}" if xp else diag
     return f"""# 第 {n} 章：{title}
 
 > 级别：{level}  
@@ -260,25 +272,24 @@ def build(
 
 ## 1. 项目背景
 
-{bg}
-
+{bg}{READ_HINT_BLOCK}
 ---
 
-## 2. 项目设计：大师与小白的对话
+## 2. 项目设计：小胖、小白与大师的对话
 
-{diag}
+{diag_full}
 
 ---
 
 ## 3. 项目实战
 
-{prac}
+{prac}{OPS_TEST_BLOCK}
 
 ---
 
 ## 4. 项目总结
 
-{summ}
+{summ}{CROSS_DEPT_BLOCK}
 {COMMON_APPEND}
 {extra}
 """
