@@ -22,23 +22,16 @@
 
 ## 2. 项目设计（三角色对话）
 
-### 2.1 小胖开球
-
-小胖说：「我 Spring Boot 会啊，`spring-boot-starter-web` 一引就跑。Camunda 是不是再引一个 starter 就行？为啥文档里还有 Cockpit、Tasklist，我本地要全开吗？」
-
-他的问题抓住了两点：**依赖组合**与**默认 Web 应用是否都要**。嵌入式场景下，starter 往往已经打包了引擎与常用 Web 控制台，但生产可裁剪；本地学习建议全开，减少心智负担。
-
-### 2.2 小白追问
-
-小白问：「第一，**自动部署**到底扫描哪个目录？我放 `resources/bpmn` 行不行？第二，H2 内存库重启后实例没了，算不算『假成功』？第三，默认用户 `demo/demo` 写在配置里，**提交到 Git** 会不会被安全扫描打回来？」
-
-### 2.3 大师定调
-
-大师归纳：**最小可运行**的目标是验证「类路径上的 BPMN/DMN 会被部署进引擎元数据表」，而不是一次把高可用与生产安全做完。
-
-- **自动部署**：Camunda Spring Boot 默认从 `classpath:/META-INF/processes.xml` 或约定目录加载（具体以所用 starter 文档为准）；业界最常见做法是把 BPMN 放在 `src/main/resources/processes/` 并依赖默认扫描，或在 `application.yaml` 中显式配置 `camunda.bpm.deployment-resource-pattern`。团队应**统一目录约定**，避免「本地能跑、同事机器找不到流程」。
-- **H2**：适合教程与 CI；要验证「重启后仍在」应换 file 模式或 PostgreSQL（后续章节）。入门阶段接受「进程重启实例消失」是正常现象。
-- **默认账户**：仅开发 profile 使用；合并主分支前用 Spring Profile、`@ConditionalOnProperty` 或外部密钥管理替换，并在 README 写明**禁止生产默认值**。
+*会议室投影着空白的 `pom.xml`，上线清单上写着「先别扯高可用」。*
+**小胖**：Web starter 我都会，再丢个 `camunda-bpm-spring-boot-starter` 不就齐活？**Cockpit/Tasklist** 我本地要不要全开啊，看着像全家桶。  
+**小白**：全家桶你先看目的——学习期我主张**全开**，省得「引擎有了、图没部署进去」那种玄学。倒是你：`BPMN` 到底塞哪个目录？放 `resources/bpmn` 行不行？  
+**小胖**：我同事就那么放的……  
+**大师**：打住。**自动部署**扫哪条 classpath，以你这份 starter 文档为准；团队最怕每人自创目录。常见是 `processes/` + 默认扫描，或在 `application.yaml` 里写死 `camunda.bpm.deployment-resource-pattern`——**统一约定**，否则 Code Review 先内战。  
+**小白**：第二刀：**H2 内存库**一重启实例没了，算不算假成功？  
+**大师**：算**教学成功**，不算**持久化验收**。要验「掉电还在」就上 file H2 或直接 PostgreSQL——那是后话；别把入门课伪装成灾备演练。  
+**小胖**：（挠头）`demo/demo` 写进 `application.yml` 提交 Git，安全扫描会不会把我简历撕了？  
+**大师**：会。默认账户只配 **`dev` profile**，主分支用 Spring Profile/外部密钥喂；README 写一句「**生产禁用默认口令**」，比事后背锅优雅。  
+*白板上只写了一行 KPI：**类路径 BPMN 进元数据表**——别的先欠着。*  
 
 ---
 
