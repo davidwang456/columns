@@ -2,47 +2,42 @@
 
 ## 1. 项目背景
 
-交互式产品里，**首字时间（TTFT）**往往比**总耗时**更影响体验：用户宁愿看到文字逐字跳出，也不愿盯着一个转圈等待整段生成。同步 `ChatModel.chat(String)` 必须等模型生成完才返回，而 **流式 API** 则通过 `StreamingChatResponseHandler`（或 WebFlux `Flux` 等适配）把 **partial response** 推给调用方。与此同时，**估算 token** 有助于预估费用与是否将超过上下文窗口。
+### 业务场景（拟真）
 
-教程 `_04_Streaming.java`（`langchain4j-examples/tutorials/src/main/java/_04_Streaming.java`）演示 `OpenAiStreamingChatModel` + `onPartialResponse` + `onCompleteResponse`，是理解「流式生命周期」的第一块拼图；与 Spring 示例里 `/streamingAssistant` 的 `Flux` 组合起来，就形成「控制台 → Web SSE」的完整故事。
+产品侧要求聊天界面 **「打字机效果」**：首字时间（TTFT）比总耗时更影响留存。同步 `ChatModel.chat(String)` 必须等整段生成完才返回；**流式 API** 通过 `StreamingChatResponseHandler`（或 WebFlux `Flux`）推送 **partial response**。**Token 估算** 则帮助评估费用与是否逼近上下文窗口。
 
-## 2. 项目设计：大师与小白的对话
+### 痛点放大
 
-**小白**：流式是不是一定更快？
+若全线用同步接口：**体验**上用户长时间盯转圈；**架构**上在 Servlet 线程里错误 **阻塞** 会拖垮吞吐；**网关**若未调 **SSE/长连接超时**，「流式」会变成 **缓冲后一次性吐出**。教程 `_04_Streaming.java` 演示 `OpenAiStreamingChatModel` + `onPartialResponse` + `onCompleteResponse`，是理解 **流式生命周期** 的第一块拼图。
 
-**大师**：**总时间**往往相近；快的是 **感知**。后端仍要等模型算完所有 token，只是**边算边推**。
+## 2. 项目设计：小胖、小白与大师的对话
 
-**小白**：`CompletableFuture` 在这里干什么？
+**小胖**：流式是不是网速更快？像 5G 下载？
 
-**大师**：把 **异步回调风格** 转成主线程可 **`join()`** 的同步出口，便于教程 main 一行跑完。Web 应用里通常不需要 join，而是 **回调到 SSE/WS**。
+**小白**：流式总时间是不是更短？`CompletableFuture` 在这里干什么？**部分响应要拼接吗？**
 
-**小白**：部分响应要拼接吗？
+**大师**：**总时间往往相近**；快的是 **感知**——边算边推。`CompletableFuture` 在教程里把异步回调 **join 成同步 main**；Web 里通常 **join 在请求线程** 是反模式。**onPartialResponse** 多为 **增量片段**（以 provider 为准）；展示可直接 print；**持久化全文**以 `onCompleteResponse` 的 `ChatResponse` 为准。**技术映射**：**流式优化 TTFT，不保证总时长下降**。
 
-**大师**：`onPartialResponse` 往往是 **增量片段**（具体语义以 provider 为准）；展示端通常 **直接 print**；若要做完整持久化，需要 **自己 append** 或通过 `ChatResponse` 获取最终 `AiMessage`。
+**小胖**：流一半红了咋办？网关会搞黄流式吗？
 
-**小白**：出错时流一半停了怎么办？
+**小白**：为何要打印 token 估计？**测试流式怎么断言？**
 
-**大师**：`onError` 要能 **关闭 UI、补偿日志、打点**；不要让用户无限等。可尝试 **有限次重试** 或提示「请缩短问题」。
+**大师**：`onError` 要 **关 UI、打点**；网关常见 **超时、缓冲、HTTP/2** 问题——运维要调 **`proxy_read_timeout`** 等（第 34 章）。token 估计建立 **代价直觉**。测试收集 **完整响应与分块次数**，对分块 **只设上下界**，不逐字快照。**技术映射**：**观测 = TTFT + 失败率 + 分块数**。
 
-**小白**：网关对 SSE 有什么问题？
+**小胖**：那我在 **响应式线程** 上 `join()` 呢？
 
-**大师**：**超时**、**缓冲**、**HTTP/2 兼容性**。运维要在 **反向代理** 上单独调 `proxy_read_timeout` 等（第 34 章场景）。
+**大师**：易 **阻塞事件循环**；应把阻塞模型隔离到 **worker** 或 **背压队列**。**技术映射**：**线程模型与流式消费要匹配**。
 
-**小白**：为何要打印 token 估计？
+---
 
-**大师**：帮助建立 **代价直觉**：长 prompt 在流式前后都耗钱；也利于排查「是不是提示写太长」。
+## 3. 项目实战
 
-**小白**：测试流式怎么断言？
+### 环境准备
 
-**大师**：收集 **完整响应** 与 **分块次数**；对分块次数只设上下界，不对每块内容逐字快照（非确定性）。
+- [`_04_Streaming.java`](../../langchain4j-examples/tutorials/src/main/java/_04_Streaming.java)；有效 Key。  
+- 可选：`spring-boot-example` 的 `StreamingAssistant` + `curl -N`。
 
-**小白**：阻塞线程池风险？
-
-**大师**：在 Servlet 线程模型里若错误阻塞，会拖垮吞吐量；**响应式栈**要把阻塞模型调用隔离到 worker。
-
-## 3. 项目实战：主代码片段
-
-> **场景入戏**：同步 `chat` 像**等整集 Netflix 缓冲完再看**；流式像**边下边播**——用户爽的是**首字时间（TTFT）**，你烦的是 **`onError` 从哪冒出来** 和 **网关把 chunked 响应缓冲没了**。
+### 分步实现
 
 ```java
 OpenAiStreamingChatModel model = OpenAiStreamingChatModel.builder()
@@ -74,55 +69,70 @@ model.chat(prompt, new StreamingChatResponseHandler() {
 futureChatResponse.join();
 ```
 
-示例亦演示「**估算 prompt token**」（对费用直觉极有用）：
-
 ```java
 new OpenAiTokenCountEstimator(GPT_4_O_MINI).estimateTokenCountInText(prompt)
 ```
 
-**仓库锚点**：[`_04_Streaming.java`](../../langchain4j-examples/tutorials/src/main/java/_04_Streaming.java)。
+| 步骤 | 目标 | 操作 |
+|------|------|------|
+| 1 | 认识 chunk | `onPartialResponse` 里 **count++** |
+| 2 | 输入成本 | 超长 prompt 对比 **估算 token** 与延迟 |
+| 3 | 网关 | `curl -N` 调 SSE，对比 **缓冲 vs 真流** |
 
-#### 闯关任务
+**可能遇到的坑**：**背压**——partial 里写 DB 慢于吐字；**用 partial 拼接做审计**——编码边界可能错，应以 **complete** 为准。
 
-| 难度 | 动手 | 你会学到 |
-|------|------|----------|
-| ★ | 在 `onPartialResponse` 里**数 chunk 次数**（简单 `count++`） | **流**不是文字均匀切分，chunk 边界**不可当自然语言边界** |
-| ★★ | 故意传入 **超长 prompt**，对比 **估算 token** 与 **体感延迟** | **输入先烧钱**——长提示是隐形刺客 |
-| ★★★ | 打开 `spring-boot-example` 的 `StreamingAssistant` + `AssistantController`，用 `curl -N` 调 SSE | **网关缓冲** vs **真流**：经典运维坑 |
+### 测试验证
 
-#### 挖深一层
+- 契约测试 **error 路径** 有用户可见反馈；负载测 **首包 P95** 与 **完整成功率**。
 
-- **`CompletableFuture.join()`**：教程为了 **main 一行结束**；Web 里通常 **绝不 join 在请求线程**——交给异步或 Reactor。  
-- **背压**：若 `onPartialResponse` 里又写 DB，可能 **比模型吐字还慢** → 需队列或丢弃策略。  
-- **完整答案**：持久化应以 **`onCompleteResponse`** 的 `ChatResponse` 为准，而非自己拼接 partial（防编码边界错乱）。
+### 完整代码清单
+
+[`_04_Streaming.java`](../../langchain4j-examples/tutorials/src/main/java/_04_Streaming.java)；Spring：`StreamingAssistant.java`、`AssistantController`。
+
+---
 
 ## 4. 项目总结
 
-### 优点
+### 优点与缺点（与同类做法对比）
 
-- **体验显著提升**；利于长答案场景。  
-- **handler** 模式边界清晰：partial / complete / error。
-
-### 缺点
-
-- 客户端与服务端 **实现复杂度** 上升。  
-- **非确定性** 使部分集成测试更脆弱。
+| 维度 | Streaming + Handler | 同步 chat | SSE 手写 HTTP |
+|------|----------------------|-----------|-----------|
+| TTFT 体验 | 优 | 差 | 视实现 |
+| 复杂度 | 中 | 低 | 高 |
+| 测试 | 需上下界 | 易 | 中 |
+| 典型缺点 | 网关/线程坑 | 体验差 | 重复造轮子 |
 
 ### 适用场景
 
-- 聊天 UI、实时写作辅助、长报告草稿。  
-- 需要 **边生成边展示引用/来源** 的产品（配合 RAG 溯源）。
+- 聊天 UI、实时写作、长报告草稿；**边生成边展示引用**（配合 RAG）。
+
+### 不适用场景
+
+- **批处理离线生成**、无需交互——同步更简单。  
+- **强依赖严格逐 token 断句**（某些语言模型 chunk 边界非自然语言边界）——产品勿假设 chunk=语义单元。
 
 ### 注意事项
 
-- **背压**：高流量下注意下游消费能力。  
-- **完整性与审计**：流式结束后仍要保存 **最终全文** 到数据库。
+- **背压**与下游消费；**审计**存 **最终全文**。
 
-### 常见踩坑
+### 常见踩坑经验（生产向根因）
 
-1. **未处理 onError** 导致静默失败。  
-2. **网关默认缓冲** 使「流式」变「一次性」。  
-3. 在 **响应式线程** 上阻塞 `join()`。
+1. **未处理 onError** → 静默失败。  
+2. **网关默认缓冲** → 「假流式」。  
+3. **在响应式线程阻塞 `join()`** → 拖垮吞吐。
+
+### 进阶思考题
+
+1. 如何用 **`ChatResponse`** 统一拿到 **usage**，与 **流式 partial** 对齐计费？  
+2. **Reactor Netty** 上调用阻塞 `ChatModel` 的推荐隔离模式？（提示：第 34 章。）
+
+### 推广计划提示（多部门）
+
+| 角色 | 建议阅读顺序 | 协作要点 |
+|------|----------------|----------|
+| **开发** | 本章 → 第 34 章 | **禁止**在请求线程错误阻塞 |
+| **运维** | 本章 + 网关 | **SSE 超时、限流、断开日志** |
+| **测试** | 本章 | **error 路径** 契约 + 分块上下界 |
 
 ---
 

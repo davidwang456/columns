@@ -2,48 +2,44 @@
 
 ## 1. 项目背景
 
-「Naive」在此不是贬义，而是说：**不做查询扩展、重排、路由**等高级策略，只遵循经典六步：加载文档 → 切分 → 嵌入 → 写入向量库 → 用查询向量做 topK → 把片段拼进提示。这样做的价值是 **可教学、可调试**：当回答不对时，你能判断是 **切分太碎**、**嵌入不对**、还是 **LLM 不听话**。
+### 业务场景（拟真）
 
-`Naive_RAG_Example.java`（`langchain4j-examples/rag-examples/src/main/java/_2_naive/Naive_RAG_Example.java`）在文件头注释中逐步写了心智模型，并显式使用 `TextDocumentParser`、`DocumentSplitters`、`EmbeddingModel`、`InMemoryEmbeddingStore` 等类型。相对 Easy RAG，你 **牺牲了行数**，换到了 **可调旋钮**。
+团队已通过 Easy RAG 做出 Demo，但 **无法解释**「答错时错在切分、嵌入还是模型」。需要在 **可教学、可调试** 的显式管线上迭代：**加载 → 切分 → 嵌入 → 写入向量库 → topK 检索 → 拼进提示**，暂不引入 **重排、路由、压缩** 等高级策略。
 
-## 2. 项目设计：大师与小白的对话
+### 痛点放大
 
-**小白**：Naive 是不是上线就用它？
+「Naive」在此 **非贬义**，而是 **经典六步可观测**。若 **永远停在 Easy 黑箱**：**性能** 无法定位 embed 瓶颈；**一致性** 无法钉 **索引版本**；**可维护性** 上排障靠猜。`Naive_RAG_Example.java` 显式使用 `TextDocumentParser`、`DocumentSplitters`、`EmbeddingModel`、`InMemoryEmbeddingStore` 等——**牺牲行数，换旋钮**。
 
-**大师**：可作为 **MVP**；用户量与合规上来后，要补 **元数据、鉴权、混合检索**（第三～五部分）。
+## 2. 项目设计：小胖、小白与大师的对话
 
-**小白**：为什么要同时出现 OpenAI chat 和本地 ONNX embed？
+**小胖**：Naive 是不是「菜」的意思？上线就用它行吗？
 
-**大师**：示例要展示 **解耦**：聊天走云、嵌入可本地化以 **省费/省延迟**。真实企业要按 **数据主权** 选择。
+**小白**：Naive 能当 **MVP** 吗？为啥示例里 **Chat 走云、embed 走本地 ONNX**？**ingest 能离线跑吗？**
 
-**小白**：ingest 能在离线跑吗？
+**大师**：Naive 是 **可调试基线**；用户量与合规上来要补 **元数据、鉴权、混合检索**。示例展示 **解耦**：聊天与嵌入可 **不同部署** 以省费/满足数据主权。**ingest 应能离线批处理**，在线仅 query。**技术映射**：**Naive = 显式六步，非功能全集**。
 
-**大师**：**应能**。生产常见 **批量任务** 写向量库，在线仅 query。
+**小胖**：topK 取多少？咋知道「检索错了」？
 
-**小白**：topK 取多少？
+**大师**：产品试验常 **3～8**；要看 **片段长度与窗口**。判断错片段：**记录召回文本与分数**（调试）+ **黄金问答集**回归。**技术映射**：**评测要盯召回，不只最终自然语言**。
 
-**大师**：从产品试验起：**3～8** 常见；要看片段长度与模型窗口。
+---
 
-**小白**：如何判断「检索到了错的片段」？
+## 3. 项目实战
 
-**大师**：**记录每次召回的文本与分数**（调试模式），用 **黄金问答集**回归。
+### 环境准备
 
-## 3. 项目实战：主代码片段
+- [`Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_2_naive/Naive_RAG_Example.java)；本地 ONNX embed 依赖与文档路径。
 
-> **场景入戏**：Naive RAG 像 **自己洗菜、切菜、炒菜**——手累，但你知道 **哪一步盐放多了**；Easy RAG 像 **外卖**，快，但 **厨师黑箱**。
+### 分步实现
 
-阅读 [`Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_2_naive/Naive_RAG_Example.java) 的 `createAssistant`：**ChatModel → loadDocument → parser → splitter → embedAll → embeddingStore → EmbeddingStoreContentRetriever → AiServices** ——在纸上画 **七个方框**，缺一框就 **答错题**。
-
-片段骨架（与仓库理念一致，细节以源码为准）：
+阅读 `createAssistant` 链：**ChatModel → loadDocument → parser → splitter → embedAll → embeddingStore → EmbeddingStoreContentRetriever → AiServices**，在纸上画 **七个方框**。
 
 ```java
 Document document = loadDocument(toPath(documentPath), new TextDocumentParser());
 DocumentSplitter splitter = DocumentSplitters.recursive(...);
 EmbeddingModel embeddingModel = new BgeSmallEnV15QuantizedEmbeddingModel();
 EmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
-
 // embed segments, add to store ...
-
 ContentRetriever contentRetriever = EmbeddingStoreContentRetriever.from(embeddingStore);
 
 return AiServices.builder(Assistant.class)
@@ -53,58 +49,77 @@ return AiServices.builder(Assistant.class)
         .build();
 ```
 
-#### 深度对比（表格作业）
-
-| 步骤 | 你能在日志里看到什么？ | Easy RAG 同款信息从哪来？ |
+| 对比 | 你能在日志里看到什么？ | Easy RAG 同款信息从哪来？ |
 |------|------------------------|----------------------------|
-| splitter 参数 | 自己设 | 默认/ingestor 内部 |
+| splitter | 自己设 | 默认/ingestor 内部 |
 | embed 模型 | `BgeSmall...` 显式 | classpath 默认 |
 
-#### 闯关
+**闯关**：调长 `chunk` 问跨段问题；**只 embed 一半** 观察胡编 → **负样本**。
 
-- **★** 调长 `chunk`，问需要 **跨段** 才能答的问题。  
-- **★★★** 故意 **只 embed 一半文档**（注释掉循环），看模型如何 **胡编** ——记为 **负样本**。
+### 测试验证
+
+- snapshot **召回列表**（脱敏）与 **黄金集** top@k；**空召回** 断言应用提示。
+
+### 完整代码清单
+
+[`Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_2_naive/Naive_RAG_Example.java)。
+
+---
 
 ## 4. 项目总结
 
-### 优点
+### 优点与缺点（与同类做法对比）
 
-- **完全显式**，利于新人建立 **RAG 数据流**概念。  
-- 易于添加 **日志**定位瓶颈。
-
-### 缺点
-
-- **样板代码**多。  
-- 「Naive」检索对 **口语化提问**脆弱。
+| 维度 | Naive 显式管线 | Easy RAG | 低层 RAG（第 20 章） |
+|------|----------------|----------|----------------------|
+| 可调试性 | 高 | 低 | 最高 |
+| 样板代码 | 多 | 少 | 最多 |
+| 口语检索 | 脆弱 | 同左 | 同左 |
+| 典型缺点 | 无高级策略 | 黑箱 | 维护成本 |
 
 ### 适用场景
 
-- 内部培训、代码评审 demo。  
-- 首次把 **向量库**接进现网前的 **技术验证**。
+- 内部培训、首次 **向量库接现网** 前验证。
+
+### 不适用场景
+
+- **亿级文档、强 ACL**——须后续章节与生产向量库。
 
 ### 注意事项
 
-- **嵌入模型** 与 **聊天模型** 语言对齐。  
-- **索引版本**记录进发布单。
+- **嵌入与聊天模型语言对齐**；**索引版本** 进发布单。
 
-### 常见踩坑
+### 常见踩坑经验（生产向根因）
 
-1. **忘记 embed** 或 **重复 embed** 未去重。  
-2. **切分太小** → 丢上下文；**太大** → 噪声多。  
-3. **评测只看最终自然语言**不看召回片段。
+1. **忘记 embed / 重复 embed** 未去重。  
+2. **切分太小/太大** → 丢上下文或噪声。  
+3. **评测只看最终回答** 不看召回片段。
+
+### 进阶思考题
+
+1. 同一文档 **两次 ingest** segment 数不一致时，如何 **定位随机性或并发**？  
+2. 何时引入 **第 21 章压缩** 而非调大 chunk？
+
+### 推广计划提示（多部门）
+
+| 角色 | 建议阅读顺序 | 协作要点 |
+|------|----------------|----------|
+| **开发** | 第 18 章 → 本章 → 第 20 章 | **七框图** 必画 |
+| **测试** | 召回 snapshot | **空召回** 断言 |
+| **运维** | 批索引配额 | **向量库磁盘/内存** |
 
 ---
 
 ### 本期给测试 / 运维的检查清单
 
-**测试：**：snapshot **召回列表**（脱敏）与 **黄金集**比对 ing top@k；对 **空召回**断言应用提示。  
+**测试**：snapshot **召回列表**（脱敏）与 **黄金集**比对 top@k；对 **空召回**断言应用提示。  
 **运维**：批索引 **资源配额**；**向量库磁盘**或 **内存**阈值。
 
 ### 附录：相关 Maven 模块与源码类
 
 | 模块 | 说明 |
 |------|------|
-| `langchain4j` | `DocumentSplitter`、`EmbeddingStoreIngestor`（对比 ingest 差异） |
+| `langchain4j` | `DocumentSplitter`、`EmbeddingStoreIngestor` |
 | `embeddings/*` | 如 `BgeSmallEnV15QuantizedEmbeddingModel` |
 
 推荐阅读：`Naive_RAG_Example.java` 顶部注释、`EmbeddingStoreContentRetriever`。

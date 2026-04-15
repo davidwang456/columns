@@ -2,76 +2,100 @@
 
 ## 1. 项目背景
 
-Aggregator 中 **`langchain4j-agentic*`**、`experimental/langchain4j-experimental-sql` 等模块代表 **前沿/尝试性**能力：可能 **API 变动**、**行为未完全冻结**。与此同时，开源协作遵循上游 **`CONTRIBUTING.md`** 与 **issue 模板**。高级开发者应能 **从自己调用的 API 出发**逆读 **`AiServicesFactory`、`ServiceHelper`（SPI）** 等，区分 **稳定契约**与**内部实现细节**。
+### 业务场景（拟真）
 
-本教材将原「Agentic + 实验」与「源码贡献」合并为一章，作为 **38 章收尾**：既是 **技术展望**，也是 **参与社区**指南。
+**`langchain4j-agentic*`**、`experimental/langchain4j-experimental-sql` 等代表 **前沿/尝试性**能力：**API 可能变动**、**行为未完全冻结**。高级开发者应能从 **`AiServices` public API** 逆读 **`AiServicesFactory`、`ServiceHelper`（SPI）**，区分 **稳定契约** 与 **实现细节**。开源协作遵循 **`CONTRIBUTING.md`**。
 
-## 2. 项目设计：大师与小白的对话
+### 痛点放大
 
-**小白**：实验模块能服务生产吗？
+**实验模块进生产** 无 **版本锁、降级** → **静默行为改变**。**大 PR** 难合并；**无测试** 难获信任。本教材 **第 38 章收尾**：**技术展望 + 社区参与**。
 
-**大师**：仅当 **你愿意锁住版本**、写好 **降级路径** 并 **接受 API 变更成本**——多数团队将其 **隔离在独立服务**。
+## 2. 项目设计：小胖、小白与大师的对话
 
-**小白**：Agentic 和普通 Tools 差异？
+**小胖**：实验模块能服务生产吗？
 
-**大师**：偏 **多步规划/自主循环**；**风险**更高，需要 **预算与人工闸**。
+**小白**：**Agentic** 和普通 **Tools** 差啥？**读源码** 从哪开始？
 
-**小白**：我该如何读源码？
+**大师**：**仅当** 锁版本、降级、接受 API 变更——多数 **隔离独立服务**。**Agentic** 偏 **多步规划/自主循环**——**预算与人工闸**。**自顶向下**：`AiServices` → `DefaultAiServices` → HTTP/Tools；**Call Hierarchy**。**技术映射**：**贡献从文档/测试/最小复现开始**。
 
-**大师**：**自顶向下**：从你用的 **`AiServices` public API** → `DefaultAiServices`（或等价）→ **HTTP/Tools**。配合 IDE **Call Hierarchy**，不要漫无目的翻包。
+**小胖**：本地咋编译？
 
-**小白**：如何贡献第一个 PR？
+**小白**：**Discord/GitHub** 咋提问？
 
-**大师**：从 **文档错别字、补充测试、复现 issue 的最小用例** 开始；避免一上来 **大重构**。
+**大师**：`mvn -pl ... -am` **只编相关模块**；全量 **耗时且易抖动**。**可复现步骤 + 版本 + 最小代码**；**期望/实际** 冷静描述。**技术映射**：**SNAPSHOT 与 fork 同步策略**。
 
-**小白**：本地怎么编译？
+---
 
-**大师**：跟随官方指南 **只编相关模块**：`mvn -pl ... -am`；全量 aggregator **耗时**且易 **网络抖动**。
+## 3. 项目实战
 
-**小白**：和 Discord/GitHub Discussion 如何互动？
+### 环境准备
 
-**大师**：**可复现步骤** + **版本号** + **最小代码**；情绪稳定地描述「**期望/实际**」。
+- 上游仓库；IDE **Navigate → Class** [`AiServices.java`](../../langchain4j/langchain4j/src/main/java/dev/langchain4j/service/AiServices.java)。
 
-## 3. 项目实战：主代码片段
+### 分步任务
 
-> **场景入戏**：**Agentic** 实验分支像 **赛车场**：你可以 **漂移**，但别把 **赛道护栏（稳定 BOM）** 拆了带回 **市区早高峰**。贡献上游则像 **改公交车仪表盘**——**多一个 traceId** 比 **静默改日志级别** 更让全场乘客 **安心**（延伸案例二）。
-
-1. 在 IDE **Navigate → Class** 打开 [`AiServices.java`](../../langchain4j/langchain4j/src/main/java/dev/langchain4j/service/AiServices.java)，记录 **`create`/`builder`** 等 **对外入口**（以当前源码为准）。  
-2. 搜索 **`ServiceHelper`** / **`loadFactories`**（或当前 SPI 入口）阅读 **插件加载** 逻辑——想清：**谁在 classpath 里塞进了你的 `ChatModel` 实现？**  
-3. 在上游仓库 **Issues** 里过滤 `good first issue`，挑一条 **写下你的理解**（不必交 PR）。
+1. 记录 **`create`/`builder`** 等对外入口。  
+2. 读 **`ServiceHelper` / `loadFactories`**（或当前 SPI）——谁 **classpath** 注入 `ChatModel`？  
+3. Issues 过滤 **`good first issue`**，写一条理解（不必 PR）。
 
 | 闯关 | 任务 |
 |------|------|
-| ★ | **fork 更新策略**：你们每周 **sync upstream** 还是 **发版再并**？ |
-| ★★ | 若业务 **依赖 SNAPSHOT**，写出 **一条** 回滚预案。 |
-| ★★★ | 读 CONTRIBUTING：哪一条 **测试要求** 曾让你 **觉得烦** 但事后 **救过命**？ |
+| ★ | fork **sync upstream** 策略 |
+| ★★ | 依赖 **SNAPSHOT** 的 **一条回滚预案** |
+| ★★★ | CONTRIBUTING 里哪条测试 **曾救命** |
 
-### 延伸案例（情景演练）：从「踩坑 PR」到「好品味贡献」
+**延伸**：**业务 monorepo 依赖 SNAPSHOT** → **`ToolExecutionResult` 字段缺失**；**实验代码独立 repo**。**改 ServiceHelper 日志级别被拒** → 改 **加 traceId** 而非改全局级别。
 
-**故事一**：某开发者为了在 **Agentic** 实验分支上验证 **多步规划**，直接在业务 monorepo 里 **依赖 SNAPSHOT**，两周后主线合并 **BOM 升级**，出现 **`ToolExecutionResult` 字段缺失** 的运行时错误。经验：**实验代码进独立 repo / 独立发布流水线**；主应用仅用 **稳定坐标**，并通过 **feature flag** 调用 **侧车服务**。
+### 测试验证
 
-**故事二**：另一位贡献者想「顺手」把 `ServiceHelper` 的日志从 **INFO 改 DEBUG**，认为「更安静」。维护者在 review 里拒绝：**诊断问题时许多企业把默认级别设在 INFO**。最终 PR 改成 **新增 `traceId`** 而不改全局级别——这是典型的 **好品味** 提交：**最小行为改变 + 可观测性增强**。把这两个故事放进内部分享，能帮助新人理解 **为什么 CONTRIBUTING 强调测试与沟通**，而非「我本地能跑」。
+- 实验特性 **feature flag + 金丝雀**。
+
+### 完整代码清单
+
+模块：`langchain4j-agentic`、`langchain4j-agentic-mcp`、`langchain4j-experimental-sql` 等；`CONTRIBUTING.md`。
+
+---
 
 ## 4. 项目总结
 
-### 优点
+### 优点与缺点（与同类做法对比）
 
-- **社区驱动**快速跟进生态。**缺点**：**稳定性**需自行评估。
+| 维度 | 社区 + 实验模块 | 仅稳定 API | 闭源 fork |
+|------|-----------------|------------|-----------|
+| 演进速度 | 快 | 慢 | 视团队 |
+| 风险 | 高 | 低 | 高 |
+| 典型缺点 | 稳定性自管 | 功能滞后 | 合并成本 |
 
 ### 适用场景
 
 - 创新项目、**PoC**、**内生工具**。
 
+### 不适用场景
+
+- **强合规要求**、**无能力锁版本**——勿上实验。
+
 ### 注意事项
 
-- **法律审查**第三方依赖许可。  
-- **fork** 与 **上游同步策略**。
+- **法律审查**第三方许可；**fork 与上游同步**。
 
-### 常见踩坑
+### 常见踩坑经验（生产向根因）
 
-1. **实验 API** 随 MINOR 版本变化导致 **静默行为改变**。  
-2. **无测试的 PR** 难以合并。  
+1. **实验 API** 随 MINOR 变化 → **静默行为改变**。  
+2. **无测试 PR** 难合并。  
 3. **大 PR** 审不动。
+
+### 进阶思考题
+
+1. **侧车服务 + feature flag** 的 **发布列车** 如何设计？  
+2. **SPI 加载顺序** 在 **native-image** 下的差异？
+
+### 推广计划提示（多部门）
+
+| 角色 | 建议阅读顺序 | 协作要点 |
+|------|----------------|----------|
+| **开发** | 本章 + 第 3 章 | **稳定模块边界** |
+| **架构** | 实验隔离 | **SLO 分级** |
+| **社区** | CONTRIBUTING | **小步 PR** |
 
 ---
 
