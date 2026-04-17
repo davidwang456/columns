@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **prototype Bean 注入单例**：每次 `getBean` 会得到新实例，但若通过**单例构造器只注入一次**，容器只创建**一个** prototype 实例并长期持有，**不会**「每请求一个新对象」。需要 **lookup 注入**、`ObjectFactory`/`Provider`、或 **scoped-proxy**（中级篇会再展开）。  
@@ -77,7 +79,7 @@ flowchart LR
 |----|------|
 | JDK | 17+ |
 | Maven | 3.9+ |
-| 依赖 | `spring-context`（与第 01 章同版本） |
+| 依赖 | `spring-context`（与第 1 章同版本） |
 | 包名 | `com.example.lifecycle` |
 
 **目录结构（建议）**
@@ -250,7 +252,7 @@ destroy: release resources
 ## 思考题
 
 1. `@Configuration` 类里的 `@Bean` 方法为何默认被 CGLIB 增强？与 `lite` 模式有何区别？（第 10/31 章会深入。）  
-2. `application.yml` 中 `spring.config.import` 与 `spring.profiles.active` 的加载顺序？（第 04 章。）
+2. `application.yml` 中 `spring.config.import` 与 `spring.profiles.active` 的加载顺序？（第 4 章。）
 
 ---
 

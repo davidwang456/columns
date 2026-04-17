@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **`@PropertySource` 与 YAML**：标准 `@PropertySource` **默认只支持 properties**；YAML 需 **Spring Boot** 的 `ConfigData` 或第三方 `spring-context` 扩展。  
@@ -167,7 +169,7 @@ mockMvc.perform(get("/api/orders/bad")).andExpect(status().isBadRequest());
 |------|------|------|
 | 404 | `context-path` 或 base package 未扫描 | 检查 `@SpringBootApplication` 包 |
 | 异常返回 HTML | 非 `@RestControllerAdvice` 或未引入 `spring-boot-starter-web` 的异常处理 | 对齐依赖与注解 |
-| CORS 预检失败 | 浏览器 OPTIONS 被安全拦截 | 第 18 章再展开 |
+| CORS 预检失败 | 浏览器 OPTIONS 被安全拦截 | 第 33 章再展开 |
 
 ---
 
@@ -190,8 +192,8 @@ mockMvc.perform(get("/api/orders/bad")).andExpect(status().isBadRequest());
 
 ## 思考题
 
-1. `Content-Type: application/json` 与 `HttpMessageConverter` 如何选？（第 06 章。）  
-2. `@Valid` 校验失败默认返回什么？（第 07 章。）
+1. `Content-Type: application/json` 与 `HttpMessageConverter` 如何选？（第 6 章。）  
+2. `@Valid` 校验失败默认返回什么？（第 7 章。）
 
 ---
 

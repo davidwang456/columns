@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **HttpMessageConverter**：`Accept` / `Content-Type` 与 **内容协商**（`ContentNegotiationConfigurer`）决定用 **Jackson** 还是 XML 等；`MappingJackson2HttpMessageConverter` 处理 `application/json`。  
@@ -51,7 +53,7 @@
 
 ## 3 项目实战
 
-本章在 **第 05 章 Web 基础**之上，补一个「**能验收 JSON 合同**」的最小例子：先看 **HTTP 头**，再看 **body 字段形态**。
+本章在 **第 5 章 Web 基础**之上，补一个「**能验收 JSON 合同**」的最小例子：先看 **HTTP 头**，再看 **body 字段形态**。
 
 ### 3.1 环境准备
 
@@ -152,8 +154,8 @@ curl -v -H "Accept: application/json" http://localhost:8080/api/orders/demo
 
 ## 思考题
 
-1. `groups` 与 `@Validated` 在 Controller 方法参数上如何用？（第 07 章。）  
-2. `@ControllerAdvice` 与 `@RestControllerAdvice` 差异？（第 07 章。）
+1. `groups` 与 `@Validated` 在 Controller 方法参数上如何用？（第 7 章。）  
+2. `@ControllerAdvice` 与 `@RestControllerAdvice` 差异？（第 7 章。）
 
 ---
 

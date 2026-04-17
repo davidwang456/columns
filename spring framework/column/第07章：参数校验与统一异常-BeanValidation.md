@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **`@Validated` + groups**：在 Controller 方法参数上使用 `@Validated(Create.class)` 等 **分组**，与 DTO 字段上 `@NotNull(groups=Create.class)` 配合，实现**同一 DTO 多场景**校验。  
@@ -183,8 +185,8 @@ mvc.perform(post("/api/orders")
 
 ## 思考题
 
-1. AOP **JDK 动态代理**与 **CGLIB** 适用条件？（第 08 章。）  
-2. `@Transactional` 打在 private 方法上有效吗？（第 09 章。）
+1. AOP **JDK 动态代理**与 **CGLIB** 适用条件？（第 8 章。）  
+2. `@Transactional` 打在 private 方法上有效吗？（第 9 章。）
 
 ---
 

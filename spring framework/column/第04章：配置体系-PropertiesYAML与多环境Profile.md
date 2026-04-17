@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **@Configuration 增强**：`@Configuration`（默认 `proxyBeanMethods=true`）中 `@Bean` 方法互相调用会走**代理**，保证单例语义；`@Configuration(proxyBeanMethods=false)` 为 **lite** 模式，类似纯 `@Bean` 工厂，**不**保证同类内多次调用返回同一实例。  
@@ -198,7 +200,7 @@ static void props(DynamicPropertyRegistry r) {
 ## 思考题
 
 1. `@PropertySource` 能否加载 YAML？（需额外处理器或 Boot 机制。）  
-2. Spring MVC 中 `@Controller` 与 `@RestController` 区别？（第 05 章。）
+2. Spring MVC 中 `@Controller` 与 `@RestController` 区别？（第 5 章。）
 
 ---
 

@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **构造器注入**让依赖在创建对象时就绪，`final` 字段可保证不可变，测试时直接 `new` 被测类并传入 mock；**字段 `@Autowired`** 依赖反射注入，子类/测试若不启动容器较难手动赋值，且隐藏了必填依赖。反射成本在现代 JVM 上通常可接受，但构造器注入更符合「显式依赖契约」。  
@@ -98,7 +100,7 @@ flowchart TD
 
 ## 3 项目实战
 
-延续第 01 章的 **Maven + `spring-context` + Java 17**；本章展示**多实现**与**限定符**，并刻意走一遍「**先失败、再修对**」的排错体验，贴近真实联调。
+延续第 1 章的 **Maven + `spring-context` + Java 17**；本章展示**多实现**与**限定符**，并刻意走一遍「**先失败、再修对**」的排错体验，贴近真实联调。
 
 ### 3.1 环境准备
 
@@ -106,7 +108,7 @@ flowchart TD
 |----|------|
 | JDK | 17+ |
 | 构建 | Maven 3.9+ |
-| 依赖 | `spring-context`（与第 01 章同版本，如 `6.1.14`） |
+| 依赖 | `spring-context`（与第 1 章同版本，如 `6.1.14`） |
 | 可选 | `spring-test`、`junit-jupiter`（用于 3.4） |
 
 **推荐目录结构**
@@ -335,8 +337,8 @@ class WiringSmokeTest {
 
 ## 思考题
 
-1. `@Scope("prototype")` 的 Bean 注入到单例服务时，不加代理会出现什么现象？（第 03 章解答。）  
-2. `application-dev.yml` 与 `application-prod.yml` 在 Spring 中如何与 `spring.profiles.active` 联动？（第 04 章。）
+1. `@Scope("prototype")` 的 Bean 注入到单例服务时，不加代理会出现什么现象？（第 3 章解答。）  
+2. `application-dev.yml` 与 `application-prod.yml` 在 Spring 中如何与 `spring.profiles.active` 联动？（第 4 章。）
 
 ---
 

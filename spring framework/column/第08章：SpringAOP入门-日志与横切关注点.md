@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **JDK 动态代理**：要求目标实现**接口**；**CGLIB** 基于子类，可代理**类**（`proxyTargetClass=true` 时强制 CGLIB）。  
@@ -142,8 +144,8 @@ public class AuditAspect {
 
 ## 思考题
 
-1. `JdbcTemplate` 与 `JdbcClient`（Spring 6.1+）选型？（第 09 章。）  
-2. `@Transactional` 默认传播行为？（第 09 章。）
+1. `JdbcTemplate` 与 `JdbcClient`（Spring 6.1+）选型？（第 9 章。）  
+2. `@Transactional` 默认传播行为？（第 9 章。）
 
 ---
 

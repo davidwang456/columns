@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：基础篇（全书第 1–18 章；核心概念、单机、简单 API、初级实战）
+
 ## 上一章思考题回顾
 
 1. **`spring.factories`（Boot 2.x）** 与 **`META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`（Boot 3）**：后者为 **显式 imports 列表**，替代大量 `spring.factories` 中的 `EnableAutoConfiguration`，**更清晰**。  
@@ -14,7 +16,7 @@
 团队要从「手工拼 XML」迁到 **Boot**：**起步依赖**一键引入 Web/JDBC/Actuator，**约定大于配置**。若不理解 **自动配置** 边界，会出现「加了个依赖行为就变了」的困惑。
 
 **痛点**：  
-- 版本冲突（**BOM** 解决）。  
+- 版本冲突（**BOM** 解决；**Maven/Gradle 对齐与 `dependency:tree` 实操**见 **第 15 章**）。  
 - **排除**某个自动配置的需求（如安全默认拦截）。  
 - **main 方法**与 **`SpringApplication.run`** 启动流程不熟。
 
@@ -96,7 +98,7 @@ debug: true
 java -jar target/app.jar --spring.main.banner-mode=off --logging.level.org.springframework.boot.autoconfigure=INFO
 ```
 
-观察启动参数如何进入 **Environment**（与第 04 章呼应）。
+观察启动参数如何进入 **Environment**（与第 4 章呼应）。
 
 ### 3.3 完整代码清单与仓库
 

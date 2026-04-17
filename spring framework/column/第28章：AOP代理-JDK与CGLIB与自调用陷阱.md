@@ -2,6 +2,8 @@
 
 > **业务线**：电商 / 订单履约微服务（拟真场景）。本章可独立阅读；与全书案例弱关联。
 
+> **篇章**：中级篇（全书第 19–35 章；架构与分布式、性能、可观测性）
+
 ## 上一章思考题回顾
 
 1. **JDK 动态代理**：基于 **接口** 反射生成代理类；**目标类** 必须是接口实现。  
@@ -101,8 +103,8 @@ public class OrderService {
 
 ## 思考题
 
-1. **`TransactionInterceptor`** 与 **`PlatformTransactionManager`** 协作？（第 29 章。）  
-2. **挂起事务** 数据结构？（第 29 章。）
+1. **`TransactionInterceptor`** 与 **`PlatformTransactionManager`** 协作？（第 38 章。）  
+2. **挂起事务** 数据结构？（第 38 章。）
 
 ---
 
