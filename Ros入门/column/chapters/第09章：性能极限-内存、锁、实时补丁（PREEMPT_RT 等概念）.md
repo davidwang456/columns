@@ -1,0 +1,138 @@
+# A09 · 性能极限：内存、锁、实时补丁（PREEMPT_RT 等概念）
+
+> 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
+
+## 1 项目背景
+
+### 业务场景
+
+**1 kHz 电流环** 不在 ROS 线程做；但 **250 Hz 关节指令** 仍希望抖动 **< 2 ms**。需要理解：**PREEMPT_RT**、**SCHED_FIFO**、**隔离 CPU**、**无锁队列**、**malloc 热点**。
+
+### 痛点放大
+
+1. **ROS spin 与实时混线程**互相干扰。
+2. **日志 printf** 进实时路径。
+3. **GPU 驱动**引发长尾延迟。
+
+**本章目标**：**架构分层**：**硬实时**（MCU/FPGA） vs **软实时**（ROS）；**cyclictest** bench。
+
+---
+
+## 2 项目设计
+
+### 剧本对话
+
+**小胖**：上 **PREEMPT_RT** 内核是不是就能保证 **1ms 控制周期**？
+
+**小白**：我把 **Nav2** 和 **电机线程**绑同一个 `spin` 里，`cyclictest` 还很漂亮，为啥现场仍抖？
+
+**大师**：**PREEMPT_RT** 降低**内核调度长尾**，但不替你解决 **用户态锁竞态、malloc 抖动、NUMA/GC、GPU 驱动**. 先 **`cyclictest` + `stress`** 压桌面，再 **`cyclictest` + ros2 stack**；若恶化，分层：**硬环在 MCU/FPGA 或独立实时线程**，**ROS 只做慢环**（**A04**）。别把 **printf/log 刷盘**放进硬路径。
+
+**技术映射**：**硬实时** = **上界可证明**；**软实时** = **尽力而为一类**。
+
+---
+
+**小胖**：**隔离 CPU（isolcpus）** 要不要开？
+
+**大师**：当你能证明 **其它线程干扰** 是主因时有价值；否则只是让排障更玄学。**绑定线程 + SCHED_FIFO** 配合 **权限/capabilities** 是另一条线——但操作失误可能导致 **整个系统饿死**。
+
+**技术映射**：**亲和性/隔离** = **缩小干扰域**，非银弹。
+
+---
+
+**大师**：先用 **`perf`/`ftrace`** 看 **用户态热点**，再上 RT 补丁——否则像没诊断就开刀。
+
+---
+
+## 3 项目实战
+
+### 环境准备
+
+与 [ENV.md](../ENV.md) 一致；本章涉及 **`sudo`** 与 **负载压测**，建议在**独占测试机**进行，勿在**生产 SSH 唯一入口**上 **`stress` 打满**。
+
+```bash
+sudo apt install -y rt-tests stress-ng linux-tools-common linux-tools-$(uname -r)
+```
+
+> **PREEMPT_RT 内核**：安装方式因 **发行版/厂商镜像** 而异；下列以 **stock 内核 + cyclictest** 为基线，**对比 RT 内核**为进阶。
+
+### 分步实现
+
+#### 步骤 1：基线 cyclictest
+
+- **目标**：记录 **当前内核** 下的 **调度抖动**分布。
+- **命令**：
+
+```bash
+sudo cyclictest -p 80 -t1 -n -m -i 500 -l 10000 -q
+```
+
+- **预期输出**：末尾 **Max/Min/Avg**；**histogram**（若带 `-h`）更可读。
+- **坑与解法**：权限不足 → **sudo**；**CPU powersave** 影响 —— 可先 `cpupower frequency-info`（若可用）。
+
+#### 步骤 2：加压 — 与 stress 同跑
+
+- **目标**：观察 **用户态负载** 对 **内核调度尾延迟**的影响。
+- **命令**：
+
+```bash
+stress-ng --cpu 4 --timeout 120s &
+sudo cyclictest -p 80 -t1 -n -m -i 500 -l 5000 -q
+kill %1 2>/dev/null || true
+```
+
+- **预期输出**：**Max** 通常 **大于** 步骤 1；用于建立「**干扰下上界**」。
+- **坑与解法**：机器过热降频 —— **监控 `sensors`**。
+
+#### 步骤 3（可选）：ROS 栈并行
+
+- **目标**：把 **Nav2 / talker** 与 **cyclictest** 同机跑，对照「**纯用户 stress**」差异。
+- **命令**：
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 run demo_nodes_cpp talker &
+sleep 2
+sudo cyclictest -p 80 -t1 -n -m -i 500 -l 5000 -q
+```
+
+- **预期输出**：若 **Max** 显著变差，思考 **DDS/回调** 与 **隔离 CPU**（剧本）。
+- **坑与解法**：**不要**在 **无监督**下长期跑满客户车。
+
+#### 步骤 4：`perf`/`ftrace` 一瞥（选做）
+
+- **目标**：落实「**先热点后 RT 补丁**」。
+- **命令**：
+
+```bash
+sudo perf top -a
+# 或按官方文档启用 ftrace function_profiler（略）
+```
+
+- **预期输出**：识别 **`malloc` / 锁 / GPU`** 热点。
+- **坑与解法**：需 **root**；采样开销改变时序 —— **理解工具效应**。
+
+### 完整代码清单
+
+- **包**：`rt-tests`、`stress-ng`、`perf`（随内核版本）。
+- **无 ROS 包强制依赖**；与 [A04](第04章：ros2_control 与硬件接口分层.md) 联调时加 **机器人栈**。
+
+### 测试验证
+
+- **交付物**：两张 **cyclictest** 截图或文本：**无 stress** vs **stress**；备注 **内核版本 `uname -r`**。
+- **进阶**：若更换 **PREEMPT_RT** 内核，**三张对比** —— 才算完成「**剧本结论**」可证伪。
+
+---
+
+## 4 项目总结
+
+### 思考题
+
+1. **memory locking (`mlockall`)** 用途？
+2. **rclcpp executor** 能做 hard RT 吗？
+
+**答案**：见 [APPENDIX-answers.md](../APPENDIX-answers.md#a09)；SRE [A10](第10章：SRE-故障演练、SLA、告警与回滚.md)。
+
+---
+
+**导航**：[上一章：A08](第08章：构建系统深入-ament、依赖与私有仓库.md) ｜ [总目录](../INDEX.md) ｜ [下一章：A10](第10章：SRE-故障演练、SLA、告警与回滚.md)
