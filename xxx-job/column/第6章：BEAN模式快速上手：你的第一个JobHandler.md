@@ -1,0 +1,138 @@
+# 第6章：第一个 JobHandler（Bean 模式）
+
+## 1. 项目背景
+
+
+在 订单超时扫描并关单 这类任务里，团队最容易低估的是“任务系统的运行语义”。开发同学往往把定时任务当作普通方法调用：只要能跑就行；测试同学更关注功能正确性，却忽略重复触发、延迟触发、节点抖动这些分布式变量；运维同学则常在事故发生后才发现任务缺少统一审计、缺少稳定告警、缺少可回放参数。于是看似简单的后台任务，在业务体量扩大后会变成隐蔽风险源。
+
+以 `d:/software/workspace/xxl-job` 仓库为基线，Bean 模式开发规范 这章的核心价值，是把“经验驱动”升级为“机制驱动”。你会看到，`xxl-job-admin` 负责调度编排和治理，`xxl-job-core` 负责执行协议和线程模型，`xxl-job-executor-samples` 用于快速验证链路。当这三层协同起来，团队才真正拥有“可观测、可恢复、可演进”的任务体系。
+
+## 2. 项目设计（剧本式交锋对话）
+**第一轮：从“能跑”到“可治理”**
+
+小胖：我一直觉得任务系统没那么复杂，反正服务在跑、定时器在跑，触发了就说明没问题。  
+小白：但线上不是单实例，尤其我们现在都在容器里滚动发布。一次发布过程，任务可能在旧实例和新实例上同时触发，这个时候“触发了”并不代表“只触发一次”。  
+大师：你们都说到点子上了。任务治理的第一原则不是“有没有跑”，而是“是否按预期跑”。按预期包含：触发时机正确、执行实例正确、结果可追踪、失败可恢复。任何一个缺失，都可能导致数据一致性问题。
+
+**技术映射**：本地 `@Scheduled` 偏“单点触发”，`XXL-JOB` 偏“中心编排 + 分布执行 + 回调闭环”。
+
+**第二轮：为什么必须结合源码路径学习**
+
+小胖：我通常直接看控制台配置，不太看源码，感觉也能用。  
+小白：会用和会排障是两回事。比如任务明明触发成功但日志没回写，单看控制台不一定能快速定位。  
+大师：对，所以要把配置和源码路径一一映射。你在控制台看到的一项参数，最终都会落实到 `JobTrigger`、`JobThread`、`JobCompleteHelper` 等代码路径中。理解路径，才能理解行为边界。
+
+**技术映射**：控制台是“操作入口”，源码是“行为定义”。两者必须联动学习。
+
+**第三轮：三角色协作如何落地**
+
+小胖：那是不是意味着每次任务变更都要开很重的评审会？  
+小白：不一定重，但要标准化。没有标准，大家只能靠经验拍脑袋。  
+大师：可以建立轻量但硬约束的四项清单：
+1) 参数是否可审计（有默认值、上限、必填校验）；
+2) 执行是否可回放（有批次号、有关键日志字段）；
+3) 故障是否可止损（有超时、有阻塞策略、有重试边界）；
+4) 结果是否可复盘（有日志落库、有告警链路、有处置手册）。
+
+**技术映射**：治理不是加流程，而是减少不确定性。
+
+**第四轮：上线前如何做“低成本高价值”验证**
+
+小胖：我们节奏很快，真要每次都完整联调吗？  
+小白：至少要有可复用的最小验证命令，不然每个人都用自己的方式验证，质量不稳定。  
+大师：正确。你可以把命令块固化到仓库文档：构建、触发、查表、查日志四步，10 分钟内得出结论。能自动化就自动化，不能自动化也要脚本化。
+
+**技术映射**：验证标准化，是从“个人经验”走向“团队能力”的分水岭。
+
+## 3. 项目实战
+### 3.1 目标与实施策略
+本章实战围绕 `orderTimeoutCloseJobHandler` 展开，目标不是写更多代码，而是完成一个“从配置到执行到复盘”的稳定闭环。建议你先在本地跑通一次正向链路，再故意注入一次失败场景，最后按照复盘模板回填证据。这样做的好处是：你不仅知道成功怎么发生，也知道失败如何被系统接住。
+
+实施策略建议分三层：
+- **链路层**：确认 Admin、Executor、数据库三者连通，并可重复触发；
+- **语义层**：确认参数、路由、阻塞、重试、超时与业务目标一致；
+- **运营层**：确认日志、告警、复盘资料完整，可交付值班体系。
+
+### 3.2 关键实现要点
+1. **参数规范化**：把字符串参数转成结构化字段，至少包含业务日期、批次大小、模式开关。非法参数必须在任务入口快速失败。  
+2. **日志结构化**：每次执行至少记录 `batchNo`、`handler`、`param`、`costMs`、`successCount`、`failCount`，确保跨系统检索可聚合。  
+3. **幂等与状态机**：所有写操作都采用条件更新，避免重试与并发导致重复推进。  
+4. **失败分级处理**：可恢复失败进入重试，不可恢复失败直接抛出并触发告警。  
+5. **回调闭环校验**：不仅看执行器日志，还要看 `xxl_job_log` 是否有一致记录。
+
+### 3.3 结果判定标准
+完成本章后，你应至少满足以下“可交付标准”：
+- 手动触发与自动触发都可稳定执行；
+- 同一参数重复触发不会产生业务重复副作用；
+- 注入异常后，控制台和数据库均可看到失败记录；
+- 告警链路可触达责任人，且可追溯处理过程；
+- 相关路径在代码仓可定位，便于新同学接手。
+
+### A. 源码路径映射表
+
+| 模块 | 路径 | 学习要点 |
+|---|---|---|
+| 调度中心启动入口 | `xxl-job-admin/src/main/java/com/xxl/job/admin/XxlJobAdminApplication.java` | 理解 Admin 作为控制平面如何加载调度线程、Web 层与数据层。 |
+| 调度核心线程 | `xxl-job-admin/src/main/java/com/xxl/job/admin/scheduler/thread/JobScheduleHelper.java` | 观察预读、扫描、触发的时间轮逻辑，理解“何时触发”。 |
+| 触发池与降级 | `xxl-job-admin/src/main/java/com/xxl/job/admin/scheduler/thread/JobTriggerPoolHelper.java` | 理解快慢线程池、超时降级与触发压力隔离。 |
+| 触发执行入口 | `xxl-job-admin/src/main/java/com/xxl/job/admin/scheduler/trigger/JobTrigger.java` | 理解路由、阻塞、重试、参数透传的拼装过程。 |
+| 执行器服务端 | `xxl-job-core/src/main/java/com/xxl/job/core/server/EmbedServer.java` | 理解执行器如何接收 Admin 触发请求并进入本地线程模型。 |
+| 任务线程模型 | `xxl-job-core/src/main/java/com/xxl/job/core/thread/JobThread.java` | 理解同一 JobHandler 的串行消费、超时中断和日志回传。 |
+| 执行器注册与心跳 | `xxl-job-admin/src/main/java/com/xxl/job/admin/scheduler/thread/JobRegistryHelper.java` | 理解在线节点维护与摘除机制，避免“僵尸节点”参与调度。 |
+| 日志与回调闭环 | `xxl-job-admin/src/main/java/com/xxl/job/admin/scheduler/thread/JobCompleteHelper.java` | 理解执行回调入库、状态更新与后续告警触发链路。 |
+
+
+### B. 验证命令块
+
+```bash
+# 步骤1：进入仓库并构建 Admin
+cd d:/software/workspace/xxl-job
+mvn -pl xxl-job-admin -am clean package -DskipTests
+
+# 步骤2：启动 Admin（端口统一为 8080，示例库名 xxl_job）
+mvn -pl xxl-job-admin spring-boot:run -Dspring-boot.run.arguments="--server.port=8080 --spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai"
+
+# 步骤3：启动 Executor（端口统一为 9999，AppName 统一）
+mvn -pl xxl-job-executor-samples/xxl-job-executor-sample-springboot -am spring-boot:run -Dspring-boot.run.arguments="--server.port=9999 --xxl.job.executor.appname=xxl-job-executor-sample --xxl.job.accessToken=default_token"
+
+# 步骤4：触发一次任务（按实际 accessToken 调整）
+curl -X POST "http://127.0.0.1:8080/xxl-job-admin/api/trigger" \
+  -H "Content-Type: application/json" \
+  -H "XXL-JOB-ACCESS-TOKEN: default_token" \
+  -d "{\"jobId\":1,\"executorParam\":\"bizDate=2026-04-22,limit=200\"}"
+
+# 步骤5：检查关键表（确认触发与日志落库）
+mysql -uroot -p -e "select id,job_group,executor_handler,trigger_status from xxl_job.xxl_job_info order by id desc limit 5;"
+mysql -uroot -p -e "select id,job_id,trigger_code,handle_code,executor_address from xxl_job.xxl_job_log order by id desc limit 10;"
+```
+
+
+## 4. 项目总结
+### C. 故障复盘表格
+
+| 现象 | 根因 | 排查 | 修复 | 预防 |
+|---|---|---|---|---|
+| 控制台显示触发成功但执行器无日志 | `xxl.job.admin.addresses` 配置错或网络不可达 | 先查执行器启动日志中的注册地址，再抓包/端口连通性 | 修正地址、开放端口、重启执行器 | 在发布前做“地址 + 端口 + 回调”三项连通检查 |
+| 任务周期触发后出现重复处理 | 任务无幂等，重试与并发触发叠加 | 对比业务主键与日志批次号，确认重复写入窗口 | 增加状态机条件更新与去重键 | 任务评审强制检查“幂等策略 + 重试副作用” |
+| 任务长时间 Running 不结束 | 下游阻塞或外部调用无超时 | 查线程栈、查外部接口耗时、看 job log cost | 设置超时阈值、拆批处理、隔离慢依赖 | 建立 p95/p99 耗时基线并周期校准超时参数 |
+| 执行器频繁上下线导致调度抖动 | 心跳异常、时钟漂移、节点资源不足 | 检查注册表、机器时间、CPU/内存与 GC 日志 | 修复 NTP、提升资源、调整心跳探测阈值 | 将节点健康检查纳入巡检并告警异常抖动 |
+
+## 本章一页纸速记
+### 核心结论
+- Bean 模式下，JobHandler 是业务调度的标准执行入口。
+- 可发布的 JobHandler 必须同时满足参数校验、幂等、可观测三要素。
+- Admin 与 Executor 的职责分离，决定了排障必须双端取证。
+
+### 落地清单
+- 统一术语：XXL-JOB、Admin、Executor、JobHandler、AppName、accessToken、Cron、FixRate。
+- 每个 JobHandler 定义参数契约和失败分级策略。
+- 命令参数统一：8080、9999、`xxl-job-executor-sample`、`xxl_job`。
+- 每次改动后执行触发+SQL 核验，确认日志闭环。
+- 复盘输出包含现象、根因、处置、预防四要素。
+
+### 常见误区
+- 把 JobHandler 当普通方法，忽略调度上下文约束。
+- 缺少幂等控制，导致重试后业务副作用放大。
+- 只验证触发，不验证回调写库一致性。
+
+
