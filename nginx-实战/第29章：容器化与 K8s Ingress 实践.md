@@ -20,29 +20,35 @@
 
 ## 2. 项目设计
 
-**场景**：凌晨应急会，值班群还在刷屏，三人围着大屏逐条核对链路。
+**场景**：运维周会，集群负责人诉苦——三个项目组、五个集群、七套 nginx.conf 模板，每次加服务都要改配置文件发工单。
 
-**小胖**：这次是不是又是“偶发现象”，过几天就自己好了？
+---
 
-**小白**：别被平均值骗了，尾延迟和错误率才是用户真实体感。
+**小胖**：（嚼着牛肉干）现在每个项目都各自维护一套 nginx 配置，改个 upstream 还要发工单等审批，比食堂排队打饭还慢！能不能像小区快递柜那样，各家快递自己扫码开箱就行？
 
-**大师**：这次我们不追求参数堆叠，而是先把方法论立住：
-1. 先解释机制，避免“头痛医头”；
-2. 再设参数边界，避免“无限放大”；
-3. 最后做故障演练，保证“可回退”。
+**小白**：容器化之后 Pod IP 是动态分配的，nginx upstream 里没法写死 IP。而且每个服务都得配 SSL 证书，手动续签 90 天一次，漏了就是证书过期事故。
 
-**大师（技术映射）**：把系统当城市交通网。平时不堵并不难，暴雨天还能有序通行，才说明调度系统真的可用。
+**大师**：（在白板上画了一个 K8s 集群拓扑）小胖的快递柜比喻很形象。K8s Ingress 就是这个"智能快递柜"——每个服务只需要声明自己的路由规则（一个 Ingress YAML），不需要知道其他服务的存在。Ingress Controller 自动监听 API Server 的 Service/Endpoint 变化，动态生成 nginx 配置，连 reload 都不用手动。证书问题交给 cert-manager，自动对接 Let's Encrypt 签发和续期，彻底消灭"证书过期"事故。
 
-**小胖**：怎么确保结论不是“碰巧有效”？
+**技术映射**：Ingress Controller 本质是运行在 K8s 内的定制 nginx 实例，通过 informer 机制 watch Ingress/Service/Endpoint 资源。核心组件：nginx-ingress-controller（nginx + lua）+ ConfigMap（全局配置）+ Secret（TLS 证书）。
 
-**大师**：一定要有证据链：
-- 基线：改动前表现；
-- 实验：单变量改动后表现；
-- 异常：注入故障后的表现。
+---
 
-**小白**：并且把结论写成规则和阈值，交给团队执行，而不是只留在群消息里。
+**小胖**：灰度发布怎么搞？我现在上线新版本都是半夜爬起来改 nginx upstream 权重，万一改错了手一抖全崩了！
 
-**大师（技术映射）**：工程化的本质，是把“个人经验”变成“组织能力”。
+**小白**：灰度最怕的是流量切过去才发现 bug，回滚又慢。能不能像奶茶店推新品那样——先让 10% 的客人免费试饮，没问题再全量上架？
+
+**大师**：你俩说到一块儿了。Nginx Ingress 的 Annotation 原生支持金丝雀发布。在原 Ingress 基础上，加一个 canary Ingress：`nginx.ingress.kubernetes.io/canary: "true"` + `canary-weight: "10"`，10% 的流量自动导到新版本。更高级的玩法是按 header 灰度——`canary-by-header: "X-Canary"`，只有内部测试账号才走灰度版本。回滚超级简单：把 canary-weight 改成 0 或者直接删掉 canary Ingress，一秒回滚。
+
+**技术映射**：两个 Ingress 对象共用同一 host 和 path，一个标记 `canary: "true"`，nginx-ingress 自动合并路由并根据权重/header/cookie 分配流量。底层通过 `split_clients` 或 lua 脚本实现一致性哈希分流。
+
+---
+
+**小白**：Ingress Controller 本身挂了呢？它岂不是成了新的单点？
+
+**大师**：好问题。Ingress Controller 必须高可用部署：① 至少 2 个副本，用 PodAntiAffinity 打散到不同节点；② 前面挂 LB（阿里云 SLB/AWS NLB），LB 做健康检查，不健康的 Pod 自动摘除；③ 配置 PDB（PodDisruptionBudget）保证最少 1 个副本在线；④ 用 HPA 自动扩缩容应对流量波动。更关键的是——Ingress Controller 挂了不影响已有 TCP 连接，nginx worker 进程继续跑，只是新配置变更无法生效。重启也是优雅关闭，现有请求处理完才退出。
+
+**技术映射**：高可用架构：External LB → Ingress Controller (Deployment + HPA + PDB + AntiAffinity) → Service → Pod。监控通过 Prometheus Operator 采集 Ingress Controller 自带的 nginx_ingress_controller_requests 等指标。
 
 ---
 

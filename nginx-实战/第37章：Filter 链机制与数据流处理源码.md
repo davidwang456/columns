@@ -20,29 +20,31 @@
 
 ## 2. 项目设计
 
-**场景**：压测复盘会，大家拿着三版配置结果，准备拍板上线策略。
+**场景**：前端团队要求在网关层给所有 HTML 响应注入一段埋点 JS，但不改业务代码。小白提议用 body filter 实现，三人开始评审方案。
 
-**小胖**：这次是不是又是“偶发现象”，过几天就自己好了？
+---
 
-**小白**：别被平均值骗了，尾延迟和错误率才是用户真实体感。
+**小胖**：（啃着苹果）这不就跟流水线上的贴标机一样嘛——不管什么牌子的方便面从线上过，自动贴一张"扫码抽奖"的贴纸上去。
 
-**大师**：这次我们不追求参数堆叠，而是先把方法论立住：
-1. 先解释机制，避免“头痛医头”；
-2. 再设参数边界，避免“无限放大”；
-3. 最后做故障演练，保证“可回退”。
+**小白**：问题是 body filter 可能会破坏 Content-Length。如果我们在响应体里加了 200 字节脚本，原来 Content-Length: 1024 就错了。上游返回时写了固定长度，网关一改长度就 mismatch。
 
-**大师（技术映射）**：把系统当城市交通网。平时不堵并不难，暴雨天还能有序通行，才说明调度系统真的可用。
+**大师**：先理解 filter 链的结构：响应从 content handler 出来后，依次经过 header_filter 链和 body_filter 链。header_filter 链负责修改响应头（比如设置 Content-Length、Cache-Control），body_filter 链负责逐块处理响应体。整个链是一个**单向链表**，调用顺序由 ngx_http_top_header_filter 和 ngx_http_top_body_filter 这两个全局指针串联。
 
-**小胖**：怎么确保结论不是“碰巧有效”？
+**小胖**：那跟食堂的餐盘传送带一模一样——盘子经过洗盘区（header_filter）、装菜区（body_filter）、加热区（another filter）、盖章区（yet another filter），每个区都能加东西。
 
-**大师**：一定要有证据链：
-- 基线：改动前表现；
-- 实验：单变量改动后表现；
-- 异常：注入故障后的表现。
+---
 
-**小白**：并且把结论写成规则和阈值，交给团队执行，而不是只留在群消息里。
+**小白**：自定义 filter 怎么插到这个链里？
 
-**大师（技术映射）**：工程化的本质，是把“个人经验”变成“组织能力”。
+**大师**：在模块的 postconfiguration 钩子里调用 ngx_http_add_*_filter。比如注册 body filter：先把原来的 ngx_http_next_body_filter 保存下来，然后把 ngx_http_top_body_filter 替换成你的函数入口。在你的函数里处理好响应体后调用 next 继续传递。这就是**责任链模式**——每个 filter 只关注自己的逻辑，不关心上下游是谁。
+
+**小白**：那 Content-Length 不一致的问题到底怎么解决？
+
+**大师**：两种策略。第一，在 header_filter 里设 Content-Length 为 -1，让 Nginx 用 chunked 传输编码——相当于告诉客户端"我边做边发，你别数长度"。第二，在 body_filter 里用 ngx_http_set_ctx 保存累积添加的字节数，在最后一个 buf 标记为 last_buf 时，通过 header_filter 修正 Content-Length 的最终值。
+
+**小胖**：哦，就跟快递包裹上的重量标签一样——要么先不写重量（chunked），最后一并称；要么先写个估算值，打包完再改。
+
+**技术映射**：**ngx_http_output_filter** 触发 filter 链，**header_filter** 链处理响应头，**body_filter** 链以 ngx_buf_t 为单位逐块处理；自定义 filter 通过**责任链替换**方式插入；需注意 **Content-Length vs chunked** 的兼容性。
 
 ---
 

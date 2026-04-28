@@ -20,29 +20,35 @@
 
 ## 2. 项目设计
 
-**场景**：故障演练日，团队把最坏情况当成默认情况来推演。
+**场景**：性能压测后复盘，三人盯着 Grafana 大屏上红红绿绿的曲线，白板上写满了指标。
 
-**小胖**：我看平均值还行，真有必要这么大动干戈吗？
+---
 
-**小白**：我们得先回答“为什么慢/为什么抖”，再谈参数。
+**小胖**：（啃着苹果）大师，这监控面板花花绿绿的，跟火锅店排队屏似的——红线是等位人数超预期，绿线是上菜快。是不是我们也照着搞一套，看哪个接口慢了就加机器？
 
-**大师**：这次我们不追求参数堆叠，而是先把方法论立住：
-1. 先解释机制，避免“头痛医头”；
-2. 再设参数边界，避免“无限放大”；
-3. 最后做故障演练，保证“可回退”。
+**小白**：上次事故 CPU、内存全绿，但接口 P99 飙到了 5 秒。光看连接数根本发现不了问题。到底该盯哪些指标才能不遗漏？
 
-**大师（技术映射）**：把系统当城市交通网。平时不堵并不难，暴雨天还能有序通行，才说明调度系统真的可用。
+**大师**：（在白板上写下 R、E、D 三个字母）小胖你的直觉方向没错，但监控不能眉毛胡子一把抓。监控体系的核心是 RED 三原则——Rate（流量）、Errors（错误）、Duration（延迟）。你把它理解成食堂打饭：你得同时知道多少人排队（Rate）、有没有人打翻餐盘洒了汤（Errors）、每个人从排队到吃上饭花了多久（Duration）。只看一个指标就像只看排队人数，后厨已经着火了你都不知道。
 
-**小胖**：怎么确保结论不是“碰巧有效”？
+**技术映射**：RED 方法论对应 Prometheus 的核心指标：Rate 用 `nginx_http_requests_total` 速率，Errors 用 `status=~"5.."` 错误计数，Duration 用 `request_time` 的 histogram 分位值。Prometheus 通过 pull 模型定期 scrape exporter 暴露的 `/metrics` 端点。
 
-**大师**：一定要有证据链：
-- 基线：改动前表现；
-- 实验：单变量改动后表现；
-- 异常：注入故障后的表现。
+---
 
-**小白**：并且把结论写成规则和阈值，交给团队执行，而不是只留在群消息里。
+**小胖**：那我直接 curl 一下 `stub_status` 不也有连接数吗？为啥非要搞个 exporter？
 
-**大师（技术映射）**：工程化的本质，是把“个人经验”变成“组织能力”。
+**小白**：单机咋看都行，十个节点你怎么挨个 curl？而且历史趋势怎么回溯？告警阈值怎么设？
+
+**大师**：问得好。`stub_status` 好比每家小饭馆自己手写的每日流水账——自己看看还行，总部要汇总 50 家店的数据就得疯。nginx-prometheus-exporter 就是统一收银系统，把每家店（每台 Nginx）的流水自动翻译成标准格式（Prometheus metrics），总部的数据中心（Prometheus Server）定时来拉。它的核心指标包括：`nginx_connections_active`、`nginx_connections_reading`、`nginx_connections_writing`、`nginx_connections_waiting`。
+
+**技术映射**：架构链路：Nginx `stub_status` → nginx-prometheus-exporter（`:9113/metrics`） → Prometheus Server（`scrape_configs`） → Grafana dashboard（预置 11333-1.json）。Exporter 用 Go 编写，每秒抓取一次 stub_status 并缓存，开销极小。
+
+---
+
+**小白**：指标都进来了，但什么时候该告警？上次我们设了个 CPU > 80% 告警，结果天天报，大家都麻木了。
+
+**大师**：告警不是"超过阈值就报"，而是"业务受损了才报"。好比冰箱里的菜——你不会每天定时检查一遍扔不扔，而是等它发出臭味了再处理。正确的做法：先用一周时间采集基线数据，P99 延迟的 2 倍作为告警线，错误率超过 5% 且持续 5 分钟以上才触发。同时配合 Alertmanager 做告警分级：P0（核心接口挂了）打电话，P1（延迟劣化）发钉钉，P2（资源水位高）发邮件。
+
+**技术映射**：Prometheus Rule 示例：`rate(nginx_http_requests_total{status=~"5.."}[5m]) / rate(nginx_http_requests_total[5m]) > 0.05`。Alertmanager 配置 route：`group_by: ['alertname']` + `repeat_interval: 4h` 防止告警风暴。
 
 ---
 

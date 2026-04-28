@@ -20,29 +20,35 @@
 
 ## 2. 项目设计
 
-**场景**：发布评审会，产品盯体验曲线，运维盯告警面板，讨论火药味十足。
+**场景**：安全策略评审会，产品经理又在提新需求——"这个接口需要加 IP 白名单"、"那个接口要校验 JWT"、"黑名单每周更新三次"。
 
-**小胖**：要不先临时加机器顶住，等活动结束再说？
+---
 
-**小白**：临时兜底可以，但没有边界验证，下次还会复发。
+**小胖**：（趴在桌上哀嚎）产品又双叒叕改风控规则了！一周改三次 C 模块，改完还要重新编译 nginx，比食堂换菜单还勤快——食堂至少每周一换，我们是天天变！
 
-**大师**：这次我们不追求参数堆叠，而是先把方法论立住：
-1. 先解释机制，避免“头痛医头”；
-2. 再设参数边界，避免“无限放大”；
-3. 最后做故障演练，保证“可回退”。
+**小白**：不改 C 模块也行，用 nginx 的 `if` 指令？但 `if` 在 location 块里有各种坑，多个条件嵌套直接逻辑混乱。有没有更灵活的方案？
 
-**大师（技术映射）**：把系统当城市交通网。平时不堵并不难，暴雨天还能有序通行，才说明调度系统真的可用。
+**大师**：（拍拍小胖肩膀）你那 `if` 方式是"用菜刀切牛排——能用但使不上劲"。Nginx 的动态扩展能力就是为这个场景设计的：用轻量脚本语言（NJS 或 Lua）嵌入 nginx 请求处理阶段，无需编译、无需重启、热加载规则。这就好比便利店收银机支持动态更新"会员日八折"策略——不用换收银机硬件，经理在后台点几下就行。
 
-**小胖**：怎么确保结论不是“碰巧有效”？
+**技术映射**：NJS 通过 `js_import` 导入 `.js` 文件，在 `js_access`（权限校验）、`js_content`（内容生成）、`js_header_filter`（响应头修改）等阶段执行。Lua 类似，通过 `access_by_lua_block`、`rewrite_by_lua_block`、`content_by_lua_block` 嵌入。
 
-**大师**：一定要有证据链：
-- 基线：改动前表现；
-- 实验：单变量改动后表现；
-- 异常：注入故障后的表现。
+---
 
-**小白**：并且把结论写成规则和阈值，交给团队执行，而不是只留在群消息里。
+**小胖**：那到底选 Lua 还是 NJS？我看网上一堆人说 OpenResty 香，但又有人说官方 NJS 更稳。
 
-**大师（技术映射）**：工程化的本质，是把“个人经验”变成“组织能力”。
+**小白**：但不管选哪个，脚本跑在 nginx worker 进程里，要是写了死循环或者内存泄露，会不会把整个 nginx 搞挂？这风险太大了。
+
+**大师**：选型看场景。NJS 是 nginx 官方原生方案，语法是标准 JavaScript，不需要额外装依赖，适合写简单的认证鉴权、请求头修改。Lua + OpenResty 第三方生态极其丰富，有 `lua-resty-redis`、`lua-resty-kafka`、`lua-resty-mysql` 等库，适合复杂的动态路由、聚合查询、API 网关。安全方面：Lua 要用沙箱模式——禁用 `os.execute`、`io.popen` 等危险函数；设置 `lua_code_cache on` 缓存编译后字节码；用 `lua_socket_pool_size` 限制连接池大小。
+
+**技术映射**：沙箱配置：`lua_code_cache on; lua_check_client_abort on; lua_socket_log_errors off;`。代码中用 `pcall` 包裹所有外部调用，防止未捕获异常中断请求。NJS 天然沙箱化，限制文件系统和网络访问。
+
+---
+
+**小白**：配置一次写死了，怎么做到动态更新规则？总不能每次改规则都 reload nginx 吧？
+
+**大师**：动态更新是核心诉求。方案有两种：① 共享内存字典（`lua_shared_dict`）+ 内部 API 接口——后台通过 HTTP POST 到 nginx 的管理端口，更新共享字典里的黑白名单，脚本每次请求时读字典判断；② 定时刷新——`init_worker_by_lua_block` 启动一个定时器，每隔 30 秒从 Redis 拉取最新规则。两种都无需 reload。好比外卖平台动态调价——不用关店、不用重启系统，运营后台改个折扣参数，前台实时生效。
+
+**技术映射**：共享字典方案：`lua_shared_dict rules 10m;` → `access_by_lua_block { local ip = ngx.var.remote_addr; local rules = ngx.shared.rules; local rule = rules:get(ip); if rule and rule == "block" then ngx.exit(403) end }` → 更新接口 `location /update_rules { content_by_lua_block { ngx.shared.rules:set(ngx.var.arg_key, ngx.var.arg_val) }; allow 127.0.0.1; deny all; }`。
 
 ---
 

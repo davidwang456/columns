@@ -1,6 +1,6 @@
 # Nginx 源码剖析与实战修炼专栏大纲
 
-> 版本：Nginx 1.31.0
+> 版本：Nginx 1.30.0
 > 面向人群：开发、运维、测试、架构师
 > 总章节：40 章（基础篇 16 章 / 中级篇 15 章 / 高级篇 9 章）
 > 每章独立成文件，字数 3000-5000 字
@@ -142,7 +142,7 @@
 **定位**：深入理解 Nginx 的 HTTP 处理管道。
 **核心内容**：
 - HTTP 处理阶段：NGX_HTTP_POST_READ -> NGX_HTTP_CONTENT -> NGX_HTTP_LOG
-- 内置变量：、、System.Management.Automation.Internal.Host.InternalHost、*、
+- 内置变量：$remote_addr、$host、$uri、$args、$request_uri、$request_method、$scheme、$http_*、$cookie_*
 - 自定义变量：set、map、geo
 - ngx_http_core_module 的职责与钩子
 - 源码关联：src/http/ngx_http_core_module.c、src/http/ngx_http_variables.c
@@ -580,4 +580,4 @@
 
 ---
 
-> **版权声明**：本专栏基于 Nginx 1.31.0 官方源码（BSD-2-Clause License）编写，所有源码引用均遵循原许可证条款。
+> **版权声明**：本专栏基于 Nginx 1.30.0 官方源码（BSD-2-Clause License）编写，所有源码引用均遵循原许可证条款。
