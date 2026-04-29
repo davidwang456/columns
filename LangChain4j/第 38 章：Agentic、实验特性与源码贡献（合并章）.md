@@ -4,25 +4,25 @@
 
 ### 业务场景（拟真）
 
-**`langchain4j-agentic*`**、`experimental/langchain4j-experimental-sql` 等代表 **前沿/尝试性**能力：**API 可能变动**、**行为未完全冻结**。高级开发者应能从 **`AiServices` public API** 逆读 **`AiServicesFactory`、`ServiceHelper`（SPI）**，区分 **稳定契约** 与 **实现细节**。开源协作遵循 **`CONTRIBUTING.md`**。
+**`langchain4j-agentic*`** 和 **`experimental/*`** 模块代表了框架的前沿/尝试性能力——比如多步规划（Agent 自己决定先调工具 A、根据结果决定是否调工具 B）。这些 API **不受语义化版本保护**，可能在下个 MINOR 版本里变化。高级开发者应该能从 `AiServices` 的 public API 逆读源码，区分稳定契约与实现细节。
 
 ### 痛点放大
 
-**实验模块进生产** 无 **版本锁、降级** → **静默行为改变**。**大 PR** 难合并；**无测试** 难获信任。本教材 **第 38 章收尾**：**技术展望 + 社区参与**。
+最大的风险是：团队直接把实验模块引入了生产服务，没有锁版本、没有降级方案。下个版本的框架升级时，实验 API 做了 breaking change——编译不通过。更危险的是：Agentic 的多步自主循环如果没有预算控制和退出条件，可能让模型无限循环调用工具、消耗巨额 token 费用。
 
 ## 2. 项目设计：小胖、小白与大师的对话
 
-**小胖**：实验模块能服务生产吗？
+**小胖**：Agentic 和前面第 14 章的普通 Tools 到底差在哪？听起来都能调工具啊。
 
-**小白**：**Agentic** 和普通 **Tools** 差啥？**读源码** 从哪开始？
+**大师**：关键区别在 **自主决策链的长度**。Tools 是单步执行：模型决定调一个工具→你的代码执行→返回结果→模型用结果组织回答。Agentic 是多步循环：模型先调工具 A → 看到结果后决定调工具 B → 根据 B 的结果决定要不要调 C → ……直到它认为任务完成了才组织最终回答。这个循环里，工具 B 的选择取决于工具 A 的结果——这是「规划」的雏形。但这也意味着 **如果没有预算控制**（最大轮次限制）和 **退出条件**（模型什么时候认为「够了」），它可能无限循环。
 
-**大师**：**仅当** 锁版本、降级、接受 API 变更——多数 **隔离独立服务**。**Agentic** 偏 **多步规划/自主循环**——**预算与人工闸**。**自顶向下**：`AiServices` → `DefaultAiServices` → HTTP/Tools；**Call Hierarchy**。**技术映射**：**贡献从文档/测试/最小复现开始**。
+**小白**：如果我发现了 bug 或者想加个小功能，怎么贡献代码？觉得编译全量工程太慢了。
 
-**小胖**：本地咋编译？
+**大师**：贡献不需要从代码开始。最受维护者欢迎的贡献方式排序：**① 报告 bug 并提供最小复现步骤**（版本信息 + 完整堆栈 + 可复现的代码）→ **② 改进文档和测试** → **③ 提一个小 PR 修一个具体的 bug** → **④ 大的功能 PR**。关于编译：用 `mvn -pl <模块名> -am` 只编译你改的模块和它的依赖模块，不要全量编译。第一次全量确实慢，但平时开发只需要 `-pl` 模式。**技术映射**：**实验模块上生产的铁律三个条件必须同时满足：锁版本 + 有降级方案 + 接受 API 变更；缺一个就当它在独立服务里试**。
 
-**小白**：**Discord/GitHub** 咋提问？
+**小白**：Agentic 的多步循环怎么确保它不会无限跑下去？比如模型调了工具 A，看到结果又调了 A，又看到结果又调了 A……我上哪设置一个「最多跑几步」的限制？
 
-**大师**：`mvn -pl ... -am` **只编相关模块**；全量 **耗时且易抖动**。**可复现步骤 + 版本 + 最小代码**；**期望/实际** 冷静描述。**技术映射**：**SNAPSHOT 与 fork 同步策略**。
+**大师**：这个问题问到核心了。Agentic 的部署必须设置三个预算限制：**最大轮次**（比如最多 5 步，超过就结束并返回当前结果）、**最大 token**（所有步骤累计的 token 上上限，超过就中断）、**超时**（整个 agentic 调用最多等 60 秒，超时返回部分结果）。这些限制应该在创建 Agent 时通过 Builder 参数设置，或者在调用时作为上下文参数传入。如果没有这些限制，一次错误的循环可能消耗掉几千个 token 和数分钟的响应时间。**技术映射**：**Agentic 的预算控制和安全闸门是上生产的前提条件，不是可选项——没有预算控制的 Agent 等于没有刹车的车**。
 
 ---
 
@@ -30,79 +30,101 @@
 
 ### 环境准备
 
-- 上游仓库；IDE **Navigate → Class** [`AiServices.java`](../../langchain4j/langchain4j/src/main/java/dev/langchain4j/service/AiServices.java)。
+```bash
+# fork 上游仓库
+git clone https://github.com/langchain4j/langchain4j.git
+cd langchain4j
+```
 
-### 分步任务
+### 分步实现
 
-1. 记录 **`create`/`builder`** 等对外入口。  
-2. 读 **`ServiceHelper` / `loadFactories`**（或当前 SPI）——谁 **classpath** 注入 `ChatModel`？  
-3. Issues 过滤 **`good first issue`**，写一条理解（不必 PR）。
+#### 步骤 1：本地编译指定模块
 
-| 闯关 | 任务 |
-|------|------|
-| ★ | fork **sync upstream** 策略 |
-| ★★ | 依赖 **SNAPSHOT** 的 **一条回滚预案** |
-| ★★★ | CONTRIBUTING 里哪条测试 **曾救命** |
+```bash
+# 只编译 langchain4j-core
+mvn -pl langchain4j-core -am -DskipTests compile
 
-**延伸**：**业务 monorepo 依赖 SNAPSHOT** → **`ToolExecutionResult` 字段缺失**；**实验代码独立 repo**。**改 ServiceHelper 日志级别被拒** → 改 **加 traceId** 而非改全局级别。
+# 如只改了 core 和 open-ai
+mvn -pl langchain4j-core,langchain4j-open-ai -am -DskipTests compile
+```
+
+#### 步骤 2：SPI 加载机制阅读路线
+
+```bash
+# 从 AiServices.builder() 开始，逐层深入
+# AiServices.builder(Assistant.class)
+#   → DefaultAiServices(ServiceHelper.loadFactories())
+#     → ChatModel / Tools / Memory 的 SPI 加载
+```
+
+#### 步骤 3：SNAPSHOT 回滚预案
+
+```bash
+# 如果依赖了 SNAPSHOT 版本
+# 回滚到上个 release
+mvn versions:revert  # 或手动改 pom.xml
+```
+
+### 闯关任务
+
+| ★ | fork sync upstream 策略 |
+|★★| 依赖 SNAPSHOT 的一条回滚预案 |
+|★★★| CONTRIBUTING.md 里哪条测试曾救命 |
 
 ### 测试验证
 
-- 实验特性 **feature flag + 金丝雀**。
+```bash
+# 实验特性：feature flag + 金丝雀
+```
 
 ### 完整代码清单
 
-模块：`langchain4j-agentic`、`langchain4j-agentic-mcp`、`langchain4j-experimental-sql` 等；`CONTRIBUTING.md`。
+`AiServices.java`、`CONTRIBUTING.md`
 
 ---
 
 ## 4. 项目总结
 
-### 优点与缺点（与同类做法对比）
+### 优点与缺点
 
 | 维度 | 社区 + 实验模块 | 仅稳定 API | 闭源 fork |
-|------|-----------------|------------|-----------|
+|------|--------------|-----------|---------|
 | 演进速度 | 快 | 慢 | 视团队 |
 | 风险 | 高 | 低 | 高 |
 | 典型缺点 | 稳定性自管 | 功能滞后 | 合并成本 |
 
 ### 适用场景
 
-- 创新项目、**PoC**、**内生工具**。
+- 创新项目、PoC、快速验证技术方案
+- 内部工具开发、团队内实验性能力尝鲜
+- 需要定制框架行为但上游暂未支持的场景
 
 ### 不适用场景
 
-- **强合规要求**、**无能力锁版本**——勿上实验。
+- 强合规要求的生产核心链路（如金融交易）
+- 无能力锁版本和做回归测试的团队
 
 ### 注意事项
 
-- **法律审查**第三方许可；**fork 与上游同步**。
+- **法律审查第三方许可**——引入实验模块前检查其开源许可是否与公司政策一致
+- **fork 与上游同步**——fork 了仓库后要定期 rebase 上游 main，避免分支差距过大
+- **实验模块版本标注**——在 pom.xml 中注释标注哪些依赖是实验性的
 
-### 常见踩坑经验（生产向根因）
+### 常见踩坑
 
-1. **实验 API** 随 MINOR 变化 → **静默行为改变**。  
-2. **无测试 PR** 难合并。  
-3. **大 PR** 审不动。
+1. **实验 API 随 MINOR 变化**——未锁版本导致 API 变更后编译不通过
+2. **无测试 PR 难合并**——提交了 2000 行代码但没有对应的测试用例，维护者无法审核
+3. **大 PR 审不动**——一个 PR 改了 30 个文件，分散了评审精力
 
 ### 进阶思考题
 
-1. **侧车服务 + feature flag** 的 **发布列车** 如何设计？  
-2. **SPI 加载顺序** 在 **native-image** 下的差异？
+1. 侧车服务 + feature flag 的发布列车如何设计——实验特性先走 feature flag 再逐步放量？
+2. SPI 加载顺序在 native-image 下的差异——静态编译时 SPI 的自动发现机制与 JVM 不同
 
-### 推广计划提示（多部门）
+### 推广计划提示
 
 | 角色 | 建议阅读顺序 | 协作要点 |
-|------|----------------|----------|
-| **开发** | 本章 + 第 3 章 | **稳定模块边界** |
-| **架构** | 实验隔离 | **SLO 分级** |
-| **社区** | CONTRIBUTING | **小步 PR** |
-
----
-
-### 本期给测试 / 运维的检查清单
-
-**测试**：对实验特性 **特性开关** + **金丝雀**。**运维**：隔离 **命名空间**与 **SLO 分级**。
-
-### 附录
-
-模块：`langchain4j-agentic`、`langchain4j-agentic-mcp`、`langchain4j-experimental-sql` 等。文档：上游 `CONTRIBUTING.md`。
+|------|-------------|----------|
+| 开发 | 本章 + 第 3 章模块地图 | 区分稳定与实验模块的边界 |
+| 架构 | 实验隔离方案 | SLO 分级管理 |
+| 社区 | CONTRIBUTING.md | 提交小步 PR 的习惯 |

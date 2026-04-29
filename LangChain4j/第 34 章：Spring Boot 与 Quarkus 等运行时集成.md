@@ -4,30 +4,21 @@
 
 ### 业务场景（拟真）
 
-企业后端已标准化在 **Spring Boot 或 Quarkus**；团队要把 `ChatModel`、记忆、检索、工具 **纳入 DI**、**配置外置**、**健康检查与指标**，并与 **网关、SSE/流式** 对齐。
+90% 的 Java 企业后端已经标准化在 Spring Boot 或 Quarkus 上。团队需要把 ChatModel、记忆、检索、工具纳入 DI 容器——通过 `@Bean` 管理生命周期、通过 `application.properties` 外置配置、通过 Actuator 做健康检查和指标暴露。之前几章的所有 `main` 方法都不适用于生产——生产需要的是 `@AiService`、`@Component`、`@Configuration`。
 
 ### 痛点放大
 
-把 `ChatModel` 写在 `main` 适合学习；生产需要 **Bean 生命周期**、**请求作用域记忆隔离**、**Micrometer**。若 **单例 ChatMemory** 串话、**网关缓冲** 吃掉流式、**仅 IDE 验证**——**TLS/代理** 在生产才爆。LangChain4j 提供 `langchain4j-spring-*`、`quarkus-langchain4j` 等。
-
-**心智图**：**模型与内存 →（可选）检索器与工具 → HTTP**。示例：
-
-- Spring：`langchain4j-examples/spring-boot-example/`
-- Quarkus：`langchain4j-examples/quarkus-example/`
+直接把 `ChatModel` 写在 `main` 方法里调用——两个问题：① 无法纳入 DI 容器的生命周期管理（每次重启都重新创建连接池）；② 无法做配置外置（模型名、API Key 写死在代码里）。`@AiService` 注解自动化了 `AiServices.builder()` 的组装过程；`ChatModelListener` 提供了统一的观测切面。但 Spring 集成也带来了新的陷阱——记忆作用域配错了会导致串话、流式经过网关会被缓冲。
 
 ## 2. 项目设计：小胖、小白与大师的对话
 
-**小胖**：不用 Spring 就不能上生产？
+**小胖**：不用 Spring 就不能上生产吗？我写个 main 方法一直跑着不也行？
 
-**小白**：`@AiService` 和手写 `AiServices.builder` 差在哪？**ChatMemory 为啥 PROTOTYPE**？
+**大师**：技术上确实可以——`java -jar` 一个只有 `main` 方法的 jar 确实能跑。但你很快会发现需要自己实现：配置文件的加载与多环境切换、Health Check 端点、指标暴露（给 Prometheus）、Bean 的生命周期管理（ChatModel 和连接池应该在何时创建何时销毁）。这些 Spring Boot 都帮你做好了。简单说：没有 Spring 也能上生产，但 **有 Spring 你上生产的速度快 10 倍**。
 
-**大师**：**不是必须** Spring，但极常见；容器负责 **配置分层、可替换 Bean、Actuator**。`@AiService` **自动装配** 模型与记忆，生成代理——**契约 vs 组装**。**单例 memory** 会 **串话**——需 **prototype + 会话映射**（第 13 章）。**技术映射**：**Listener = 统一观测切面（第 36 章）**。
+**小白**：`@AiService` 注解和手写 `AiServices.builder()` 到底差在哪？ChatMemory 为什么在 Spring 里要配成 `PROTOTYPE` 作用域？
 
-**小胖**：两个模型（快/慢）怎么挂？
-
-**小白**：**Gateway 后面 SSE** 注意啥？**Quarkus** 不一样？
-
-**大师**：**双 `ChatModel` Bean + @Qualifier** 或拆分接口；**勿静态 `new`**。SSE 经网关要 **超时、缓冲、HTTP/2**。**Quarkus** 模式一致：**模型 + 声明式服务 + 路由**——读三类入口即可。**技术映射**：**生产同构试跑**（`java -jar`/镜像）避免 **IDE 绿、生产红**。
+**大师**：`@AiService` 是 **声明式**——Spring 在启动时自动扫描带 `@AiService` 的接口，从 ApplicationContext 中获取 `ChatModel`、`ChatMemory`、`ChatModelListener` 等 Bean，为你生成代理并注册为 Spring Bean。手写 `builder()` 是 **组装式**——你自己控制每一块的创建和注入。两者殊途同归。ChatMemory 配成 `PROTOTYPE` 的原因：**如果 memory 是 Singleton（默认），所有用户共用同一个记忆实例——用户 A 说「我要退款」，用户 B 也看到这条消息了，这就是串话事故**。每个用户或每个会话需要独立的 memory 实例，所以要用 `PROTOTYPE` 加会话 ID 映射。**技术映射**：**Spring 的 @AiService 把 AiServices.builder() 的样板代码收进了容器自动装配；ChatModelListener 是统一观测的自然切面——你通过它打 token 用量、记延迟、脱敏日志，而不需要侵入业务代码**。
 
 ---
 
@@ -35,145 +26,121 @@
 
 ### 环境准备
 
-- JDK、Maven/Gradle；可选 Docker 做与生产同构试跑。
+```bash
+# Spring Boot 项目的 pom.xml 应包含：
+# langchain4j-spring-boot-starter
+# langchain4j-open-ai
+```
 
-### 分步实现（主代码片段）
+### 分步实现
 
-### 3.1 Spring Boot：`Assistant` 与控制器
-
-接口定义（仓库原文）：
+#### 步骤 1：Spring Boot 最小配置
 
 ```java
-import dev.langchain4j.service.SystemMessage;
-import dev.langchain4j.service.spring.AiService;
-
+// Assistant.java
 @AiService
 public interface Assistant {
-
     @SystemMessage("You are a polite assistant")
     String chat(String userMessage);
 }
-```
 
-路径：`langchain4j-examples/spring-boot-example/src/main/java/dev/langchain4j/example/aiservice/Assistant.java`。
-
-控制器暴露同步与流式两种路由：
-
-```java
-@GetMapping("/assistant")
-public String assistant(@RequestParam(value = "message", defaultValue = "What is the current time?") String message) {
-    return assistant.chat(message);
+// AssistantConfiguration.java
+@Configuration
+public class AssistantConfig {
+    
+    @Bean
+    ChatModel chatModel() {
+        return OpenAiChatModel.builder()
+                .apiKey(System.getenv("OPENAI_API_KEY"))
+                .modelName(GPT_4_O_MINI)
+                .build();
+    }
+    
+    @Bean
+    @Scope("prototype")
+    ChatMemory chatMemory() {
+        return MessageWindowChatMemory.withMaxMessages(10);
+    }
+    
+    @Bean
+    ChatModelListener myListener() {
+        return new MyChatModelListener();
+    }
 }
 
-@GetMapping(value = "/streamingAssistant", produces = TEXT_EVENT_STREAM_VALUE)
-public Flux<String> streamingAssistant(
-        @RequestParam(value = "message", defaultValue = "What is the current time?") String message) {
+// Controller.java
+@RestController
+public class AssistantController {
+    
+    @Autowired
+    Assistant assistant;
+    
+    @GetMapping("/chat")
+    public String chat(@RequestParam String message) {
+        return assistant.chat(message);
+    }
+}
+```
+
+#### 步骤 2：流式端点
+
+```java
+@GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public Flux<String> stream(@RequestParam String message) {
     return streamingAssistant.chat(message);
 }
 ```
 
-`AssistantConfiguration` 中示范了 **`MessageWindowChatMemory` 原型作用域**与全局 **`ChatModelListener`** Bean，可直接对照阅读：
-
-- `.../aiservice/AssistantConfiguration.java`
-
-低层对照：`ChatModelController` 演示不通过 `@AiService`、直接注入 `ChatModel` 的用法 —— 适合需要完全手动掌控消息构造的团队。
-
-### 3.2 Quarkus 侧建议阅读顺序
-
-打开 `quarkus-example/src/main/java/io/quarkiverse/langchain4j/sample/`，优先阅读：
-
-1. 声明 AI 服务与 triage 逻辑的类（如 `TriageService`）。
-2. JAX-RS `Resource` 如何把用户输入交给服务。
-3. `application.properties` 中模型与扩展配置（若有）。
-
-与 Spring 的差异多在**配置文件格式**与**原生镜像构建**，LangChain4j 核心 API 保持一致。
-
-### 3.3 配置外置清单（两栈通用）
-
-- API Key / 底座 URL：环境变量或密钥管理。
-- 模型名、温度、超时：按环境拆分 `application-*.yml` / `profile`。
-- 观测开关：采样率、日志脱敏正则。
-
-### 3.4 闯关与「梗图」式排障（趣味 + 实战）
-
-| 症状 | 先怀疑谁 | 一句人话 |
-|------|----------|----------|
-| 两个用户对话 **串台** | `ChatMemory` **作用域** 配成 singleton | 「记忆灌进公共饮水机了」 |
-| 流式接口 **首字慢但后端快** | **网关 / Nginx buffer** | 「中间商在攒字幕」 |
-| 本地绿、Docker 红 | **JVM 代理与证书** | 「容器里没 trust 公司.crt」 |
-
-**深度练习**：用 `curl -N` 打 `streamingAssistant`，同时在 **`MyChatModelListener`**（若保留）里打点——对齐 **首包时间** 与 **模型 TTFB**，形成 **链路共识**。
+```bash
+# 验证流式
+curl -N http://localhost:8080/stream?message=hello
+```
 
 ### 测试验证
 
-- `/assistant` 与 `/streamingAssistant` **契约 + 负载冒烟**；错误模型配置 **5xx** 行为；`ChatModelListener` 字段 **脱敏**。
+```bash
+# WebTestClient 测试
+# 错误模型配置时的 5xx 行为
+```
 
 ### 完整代码清单
 
-[`spring-boot-example`](../../langchain4j-examples/spring-boot-example)、[`quarkus-example`](../../langchain4j-examples/quarkus-example)。
+`spring-boot-example`、`quarkus-example`
 
 ---
 
 ## 4. 项目总结
 
-### 优点与缺点（与同类做法对比）
+### 优点与缺点
 
-| 维度 | Spring/Quarkus 集成 | 纯 main + 自建生命周期 | 侧车独立服务 |
-|------|---------------------|------------------------|--------------|
+| 维度 | Spring/Quarkus 集成 | 纯 main | 侧车独立服务 |
+|------|-------------------|--------|-------------|
 | 工程化 | 高 | 低 | 中 |
-| 可测性 | 高（Mock Bean） | 中 | 中 |
-| 排障 | 需分层 | 简单 | 需联调 |
-| 典型缺点 | 框架+LLM 双栈 | 无标准观测 | 运维多进程 |
-
-**文字补充（优点）**：**Bean 化**、**Listener 横切**、**Flux 流式** 路径。
-
-**文字补充（缺点）**：**学习曲线叠加**；**记忆作用域** 误用；**版本与 BOM** 联合验证。
+| 典型缺点 | 框架+LLM 双栈 | 无标准观测 | 多进程运维 |
 
 ### 适用场景
 
-- 企业 REST/gRPC 已 **Spring/Quarkus**；**统一网关 + 指标** 纳现网。
+- 企业 REST/gRPC 已 Spring/Quarkus
 
 ### 不适用场景
 
-- **无 DI 的极简脚本**——不必引入。
+- 极简脚本无 DI
 
-### 注意事项
+### 常见踩坑
 
-- **响应式栈** 阻塞调用需 **`subscribeOn`/弹性线程池**；**多实例** 记忆需 **粘性或外置 ChatMemoryStore**。
-
-### 常见踩坑经验（生产向根因）
-
-1. **单例记忆当多用户** → 串话。  
-2. **网关未配超时** → SSE 假死。  
-3. **仅 IDE 验证** → TLS/代理生产才暴露。
+1. 单例记忆当多用户 → 串话
+2. 网关未配超时 → SSE 假死
+3. 仅 IDE 验证 → TLS/代理生产才暴露
 
 ### 进阶思考题
 
-1. **多 `@AiService`** 与 **共享 ChatMemory** 的边界如何设计？  
-2. **原生镜像** 下 `ChatModel` 与 **反射配置** 的注意点？
+1. 多 @AiService 与共享 ChatMemory 的边界？
+2. 原生镜像下 ChatModel 与反射配置的注意点？
 
-### 推广计划提示（多部门）
+### 推广计划提示
 
 | 角色 | 建议阅读顺序 | 协作要点 |
-|------|----------------|----------|
-| **开发** | 第 12 章 → 本章 → 第 36 章 | **记忆作用域** |
-| **运维** | 网关 + SSE | **超时、熔断、首 token 基线** |
-| **测试** | WebTestClient | **脱敏断言** |
-
----
-
-### 本期给测试 / 运维的检查清单
-
-**测试**：对 `/assistant` 与 `/streamingAssistant` 分别做契约测试与负载冒烟；使用 `WebTestClient`/`RestAssured` 验证错误模型配置时的 5xx 行为是否符合内部规范；对 `ChatModelListener` 记录的关键字段做脱敏断言。
-
-**运维**：把模型供应商 SLA 与内部 SLO 区分展示；容器镜像中禁止写死密钥；为流式端点单独配置超时、并发与熔断；发布前在预发环境比对「冷启动→首 token 延迟」基线。
-
-### 附录：相关 Maven 模块与源码类
-
-| 模块 | 说明 |
-|------|------|
-| `langchain4j-spring-boot-starter` 等 | Spring 起步依赖（以团队实际引入为准） |
-| `ExampleApplication.java` | 启动入口 |
-| `AssistantConfiguration.java` | 记忆与 Listener |
-
-推荐阅读：`Assistant.java`、`AssistantController.java`、`AssistantConfiguration.java`、`ChatModelController.java`。
+|------|-------------|----------|
+| 开发 | 第 12 章 → 本章 → 第 36 章 | 记忆作用域 |
+| 运维 | 网关+SSE | 超时、熔断、首 token 基线 |
+| 测试 | WebTestClient | 脱敏断言 |

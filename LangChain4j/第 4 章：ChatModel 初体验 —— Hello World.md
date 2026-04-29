@@ -2,45 +2,73 @@
 
 ## 1. 项目背景
 
-在企业里第一次落地大语言模型（LLM）时，最常见的诉求不是「立刻做出 Agent」，而是：**用 Java 发一条用户消息，拿回一段自然语言回答**，并把它接进现有订单系统、知识库或内部门户的后端。直连某家云厂商的 HTTP API 当然可行，但后续一旦需要切换模型、统一观测或接入记忆与工具，分散在各处的客户端代码会迅速变成「一坨胶水」。
+### 业务场景（拟真）
 
-LangChain4j 在模型层提供的核心入口之一是 **`ChatModel`**（以及与之配套的流式 `StreamingChatModel`）。它把「配置密钥、模型名、请求构造、响应解析」收束为少量 Builder 与同步方法，让业务代码保持面向领域问题，而不是面向 HTTP 字段名。
+你的任务是让一个 Java 程序说出人生中的第一句 AI 回应：「Say Hello World」。这件事听起来简单，但对于一个每天写 CRUD 的 Java 团队来说，它代表了 **技术栈的一次质变**——从「调数据库」到「调大模型」。老张把任务分给了刚入职的小张：**「今天之内，在本地跑通第一行代码，证明三件事——密钥合法、网络可达、模型名写对。」**
 
-官方教程中的 `_00_HelloWorld` 位于：
+这看起来只需要几十行代码，但小张发现选项很多：直接发 HTTP 请求到 OpenAI？用官方的 Java SDK？用 Spring 的 RestTemplate？如果下周要切换到 Azure 呢？如果本地没外网要走内网代理呢？如果团队想在同一套代码里对比 GPT-4 和国产模型的效果呢？
 
-- `langchain4j-examples/tutorials/src/main/java/_00_HelloWorld.java`
+LangChain4j 在模型层提供的核心入口是 **`ChatModel`**（以及配套的流式 `StreamingChatModel`）。它把「配置密钥、模型名、请求构造、响应解析」收束为一个 Builder 加一个方法的调用——`model.chat("Say Hello World")`。无论底层是 OpenAI、Azure、Bedrock 还是 Ollama，调用形态都一样：用户文本进 → 模型文本出。
 
-本章定位在**基础篇的最小闭环**：在本地或 CI 中能稳定打印一次模型回复，为后续章节中的 Prompt、Memory、Tools、RAG 打下基础。
+### 痛点放大
+
+如果团队选择直接调 HTTP API——比如用 `HttpURLConnection` 发 POST 到 `https://api.openai.com/v1/chat/completions`——确实能在 20 行代码内跑通。但代价是什么？
+
+- **每个集成都得重写认证逻辑**：OpenAI 用 Bearer token，Azure 用 API-Key 头，Ollama 不用认证——这三套代码无法复用。
+- **请求/响应格式不同**：OpenAI 的请求体是 `{"model":"gpt-4","messages":[...]}`，Azure 需要 `deployment-id` 参数，Ollama 的格式又不一样。
+- **切换模型 = 重写控制器**：产品说「这个月用 GPT-4，下个月试试国产模型」，你就要重写或复制一套新的 HTTP 调用代码。
+
+这些散落在各处的 HTTP 调用，就是一开始 **欠下的技术债**。而 `ChatModel` 接口要做的就是：**让你的业务代码永远只面对 `model.chat(String)` 这一个方法**，切换模型就是换一个 Builder 的事。
 
 ## 2. 项目设计：小胖、小白与大师的对话
 
-**小胖**：我就想让程序说一句 Hello World，这跟去便利店买瓶水一样简单吧？为啥还要引一个「LangChain」？
+**小胖**：我就想让程序说一句 Hello World，这跟去便利店买瓶水一样简单吧？扫码付款拿走——为啥还要引一个「LangChain4j」这么大的框架？
 
-**小白**：README 里说「统一 API」——Hello World 里到底 **统一了什么**？我看到的明明是 `OpenAiChatModel` 啊。
+**大师**：你说得对，买一瓶水确实不需要研究供应链。但如果下个月你要同时卖三个牌子的水（OpenAI、Azure、国产模型），每个牌子的扫码枪（认证方式、消息格式）都不同——你是每个牌子单独买一台收银机，还是统一用一个收银系统，只换进货渠道？LangChain4j 就是那个统一的收银系统：不管你的水（模型）从哪来，收银员的操作都是一样的 `model.chat("Hello")`。
 
-**大师**：你统一的首先是「**聊天抽象**」：业务面对 **`ChatModel` 接口**（`langchain4j-core`），而不是某家厂商的 JSON 字段名。`OpenAiChatModel` 只是当前选中的 **实现与 Builder**。无论底层是 OpenAI、Azure、Bedrock 还是 Ollama，调用形态都是「用户文本进 → 模型文本出」。**技术映射**：**接口 = 契约，Builder = 厂商适配器**。
+**小白**：好，统一抽象我理解了。但 Hello World 这个例子里到底统一了什么——我看到的明明就是 `OpenAiChatModel` 这个具体的类名，跟 `OkHttpClient` 调 OpenAI 有多大区别？
 
-**小胖**：哦……那不就跟点外卖：App 上都是「下单」，后面是美团还是饿了么骑手我不管？
-
-**小白**：补充：**老文档里的 `ChatLanguageModel` 和现在的 `ChatModel` 啥关系？** `model.chat("Say Hello World")` 会带 **system prompt** 吗？
-
-**大师**：命名演进里，面向聊天的主接口已收敛为 **`ChatModel`**；旧文里的 `ChatLanguageModel` 当作 **同产品线的前后名**，以当前 Javadoc 为准。`chat(String)` 是 **最薄单轮用户消息**，不含 system；多轮与 system 在 **Memory / Messages API** 展开。**技术映射**：**语法糖背后是 `UserMessage` → 模型 → 文本**，调试复杂会话时要会「脑补」消息列表。
-
-**小白**：生产里能 **每个请求 `new` 一个 `OpenAiChatModel`** 吗？超时了库会 **自动重试** 吗？
-
-**大师**：客户端里常有 **连接池与序列化器**，应在 **应用生命周期内复用 Bean**（Spring / Quarkus / CDI），多租户可多 Bean；每请求 `new` 会徒增连接与 GC。**Hello World 不负责完整弹性**——超时、重试、熔断要结合 HTTP 客户端与第 9、36 章。**技术映射**：**对象生命周期与弹性策略属于基础设施层**。
-
-**小胖**：那我测试机没外网咋办？输出就一个 `String`，够不够啊？
-
-**大师**：没外网可换 **`langchain4j-ollama`** 或内网兼容端点，只要模块提供 `ChatModel`；**端点必须配置化**，勿写死在 `main`。同步 `String` 对演示够用；要 **流式 / token 统计 / tool call** 再换 `StreamingChatModel`、`ChatModelListener` 等。**技术映射**：**Hello World 只验证连通性三要素：密钥、网络、模型名**。
-
-## 3. 项目实战：主代码片段
-
-> **场景入戏**：这是你的 **「第一声啼哭」**——还不涉及记忆、工具和向量库，只证明三件事：**密钥合法**、**网络可达**、**模型名字写对**。能跑通这一天，后面所有花哨章节才有地基。
-
-下面是与仓库一致的核心片段（类名 `_00_HelloWorld` 仅为教程命名，生产请换成 `HelloWorldApplication` 一类可读名）：
+**大师**：你看到的 `OpenAiChatModel` 只是 **当前的实现**。关键区别在于你的业务代码 `Assistant` 依赖的是 `ChatModel` **接口**——这个接口定义在 `langchain4j-core` 中，与具体厂商无关。当你的代码写成这样：
 
 ```java
+public class OrderAssistant {
+    private final ChatModel model;  // 面向接口
+    
+    public OrderAssistant(ChatModel model) {  // 构造注入
+        this.model = model;
+    }
+}
+```
+就不需要改 `OrderAssistant` 的任何代码。换模型时，你只需要改 **组装的那一行**——调用不同的 Builder。而直连 OpenAI SDK 的话，你的 `OrderAssistant` 里到处都是 `OpenAiClient` 的调用，换模型等于重写。**技术映射**：**`ChatModel` 接口 = 业务代码与模型实现之间的契约；Builder = 厂商专属的适配器工厂——接口保证可替换，Builder 承担差异**。
+
+**小白**：那生产环境里能每个请求都 `new` 一个 `OpenAiChatModel` 对象吗？如果模型调用超时了，库会自动重试吗？
+
+**大师**：**绝对不能每个请求都 `new` 一个新的。** `OpenAiChatModel` 内部包含连接池（默认是 `HttpClient` 的内置连接池）和 Jackson 序列化器——如果每个请求都重新创建，每次都要新建 TCP 连接、初始化序列化器，徒增 GC 压力和延迟。正确的方式是在 **应用生命周期内复用单例 Bean**（Spring 的 `@Bean`、Quarkus 的 `@Singleton`）。关于超时和重试：**Hello World 不负责弹性**——`model.chat()` 默认没有任何重试逻辑，超时了直接抛异常。超时策略、重试退避、熔断降级，这些需要结合 HTTP 客户端的配置（第 9 章）和统一观测（第 36 章）来搭建。**技术映射**：**ChatModel 实例有状态（连接池），生命周期应由 DI 容器管理；弹性策略不属于接口契约，属于基础设施层的职责**。
+
+**小胖**：那如果我测试机上没外网咋办？输出就是一个 `String`，够不够用？
+
+**大师**：没外网就换 `langchain4j-ollama` 或公司的内网兼容端点——只要那个 provider 也实现了 `ChatModel` 接口，你的业务代码一行都不用改。端点的 URL 必须 **配置化**（从 `application.properties` 或环境变量读），绝对不能硬编码在 `main` 方法里。至于 `model.chat()` 返回的 `String`——对初学者和一问一答场景完全够用；后续需要体验打字机效果（流式）、统计 token 用量、调试工具调用时，再换成 `StreamingChatModel` 和 `ChatModelListener`。**技术映射**：**Hello World 验证的只有三件事：密钥有效、网络可达、模型名正确——你不需要在设计模式上过度设计，先让火车跑起来**。
+
+## 3. 项目实战
+
+### 环境准备
+
+```bash
+# 确认已进入 tutorials 模块
+cd langchain4j-examples/tutorials
+
+# 确认 pom.xml 已引入相关依赖（见第 2 章 BOM 检查）
+mvn -q dependency:tree -Dincludes=dev.langchain4j
+
+# 准备 API Key（不要写死在代码里！）
+export OPENAI_API_KEY="sk-your-key-here"   # macOS/Linux
+# set OPENAI_API_KEY=sk-your-key-here      # Windows
+```
+
+### 步骤 1：跑通 Hello World
+
+```java
+// 文件路径：tutorials/src/main/java/_00_HelloWorld.java
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 
@@ -51,7 +79,7 @@ public class _00_HelloWorld {
     public static void main(String[] args) {
 
         ChatModel model = OpenAiChatModel.builder()
-                .apiKey(ApiKeys.OPENAI_API_KEY)
+                .apiKey(System.getenv("OPENAI_API_KEY"))
                 .modelName(GPT_4_O_MINI)
                 .build();
 
@@ -62,93 +90,158 @@ public class _00_HelloWorld {
 }
 ```
 
-**仓库锚点**：[`langchain4j-examples/tutorials/src/main/java/_00_HelloWorld.java`](../../langchain4j-examples/tutorials/src/main/java/_00_HelloWorld.java)。打包与命令行传参见同目录 [`tutorials/README.md`](../../langchain4j-examples/tutorials/README.md)。
+```bash
+# 运行（在 IDE 中或命令行）
+mvn exec:java -Dexec.mainClass="_00_HelloWorld"
+```
 
-#### 三行读懂（别跳过）
+**预期输出**：
+```
+Hello! How can I assist you today?
+```
 
-1. **`OpenAiChatModel.builder()`**：把厂商方言收成 **链式 Java**；`GPT_4_O_MINI` 来自枚举，防手滑拼错模型代号。  
-2. **`model.chat(String)`**：**甜腻语法糖**——内部仍是一轮 `UserMessage` → 模型 → `String`，调试复杂会话时要会「脑补」成消息列表。  
-3. **`ApiKeys.*`**：教程收纳盒；**上线请换成** `System.getenv` / Vault ——否则下一个登上公司内部耻辱柱的就是你。
+（具体文案因模型版本而异，关键是成功返回一段文本而不是报错。）
 
-#### 闯关任务（由浅入深）
+### 步骤 2：破坏实验——填错 API Key
 
-| 难度 | 动手 | 过关标准 |
-|------|------|----------|
-| ★ | IDE 直接 Run，再故意填错 API Key | 学会读 **401 / invalid_api_key**，别只会说「红了」 |
-| ★★ | 把提示从 English 换成一句中文绕口令 | 观察 **时延**与 **是否拒答**（模型策略差异） |
-| ★★★ | 按 README 打 fat-jar，`java -cp ... _00_HelloWorld "你的 args"` | ** Classpath 地狱**预演——生产 Dockerfile 也会遇见 |
+```java
+// 改一行
+.apiKey("sk-invalid-key")
+```
 
-#### 挖深一层（原理与边界）
+重新运行，**预期报错**：
+```
+Exception in thread "main" dev.langchain4j.exception.AuthenticationException: 
+  statusCode: 401 Unauthorized
+  message: {"error":{"message":"Incorrect API key provided.","type":"invalid_request_error"}}
+```
 
-- **依赖方向**：业务只握 `ChatModel` 接口（`langchain4j-core`），实现类在 **`langchain4j-open-ai`**——换 Ollama 时换 Builder，**调用点可不动**。  
-- **阻塞模型**：`chat` 在 **当前线程**阻塞到写完最后一个 token；高并发 Web 里要配 **线程池隔离**（第 7、34 章收回这个伏笔）。  
-- **Listeners**：若要在不改业务代码的情况下统一打点和脱敏，请预习 `ChatModelListener`（`MyChatModelListener` 在 Spring 示例中）。  
-- **趣味冷知识**：`chat("Say Hello World")` 比你想象得更「重」——底下是一次完整 HTTPS JSON round-trip；**别在循环里 accidentally 打爆配额**。
+学会读这个错误：**401 = 密钥问题**，不是网络问题也不是模型问题。
+
+### 步骤 3：破坏实验——填错模型名
+
+```java
+// 改一行
+.modelName("gpt-9999")
+```
+
+**预期报错**：
+```
+Exception in thread "main" dev.langchain4j.exception.ModelNotFoundException: 
+  statusCode: 404
+  message: {"error":{"message":"The model `gpt-9999` does not exist"}}
+```
+
+### 步骤 4：打 fat-jar 并命令行运行
+
+```bash
+# 打包
+mvn -Pcomplete package -DskipTests
+
+# 命令行运行
+java -cp target/tutorials-*-jar-with-dependencies.jar _00_HelloWorld
+```
+
+这是一个 **Classpath 地狱预演**——生产 Dockerfile 里也会遇到同样的 jar 依赖问题。
+
+### 三行读懂核心代码
+
+```java
+// 1. Builder → 把厂商方言收成链式 Java，GPT_4_O_MINI 来自枚举防手滑
+ChatModel model = OpenAiChatModel.builder().apiKey(...).modelName(...).build();
+
+// 2. chat(String) → 语法糖，内部是一轮 UserMessage → 模型 → String
+String answer = model.chat("Say Hello World");
+
+// 3. ApiKeys → 教程收纳盒；上线请换 System.getenv / Vault
+.apiKey(System.getenv("OPENAI_API_KEY"))
+```
+
+### 闯关任务
+
+| 难度 | 动手操作 | 过关标准 |
+|------|---------|----------|
+| ★ | IDE 直接 Run，故意填错 Key | 学会读 401，别只会说「红了」 |
+| ★★ | 提示改成中文绕口令 | 观察时延与是否拒答 |
+| ★★★ | 打 fat-jar 命令行运行 | Classpath 地狱预演 |
+
+### 挖深一层
+
+- **依赖方向**：业务握 `ChatModel` 接口（core），实现类在 provider——换 Ollama 时只换 Builder，调用点不动
+- **阻塞模型**：`chat()` 在当前线程阻塞到写完最后一个 token；高并发要配线程池隔离（第 7、34 章）
+- **冷知识**：`chat("Say Hello World")` 是一次完整 HTTPS JSON round-trip，别在循环里打爆配额
+
+### 可能遇到的坑
+
+| 坑 | 表现 | 解法 |
+|----|------|------|
+| 版本混用 | NoSuchMethodError | 第 2 章 BOM 检查 |
+| 公司代理/TLS 证书 | SSL 握手失败 | 配 JVM truststore |
+| Key 写死在代码里 | 提交到 Git 泄露 | 永远用环境变量 |
+| Hello World 当生产代码 | 无超时限流 | 上线前加 timeout 和线程池 |
+
+### 测试验证
+
+```bash
+# 验证连通性的最快方法
+curl -N https://api.openai.com/v1/chat/completions \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say Hello World"}]}'
+```
+
+如果 curl 能通但 Java 代码不通，问题在你的 Java 代码中；反之亦然。
+
+### 完整代码清单
+
+[`_00_HelloWorld.java`](../../langchain4j-examples/tutorials/src/main/java/_00_HelloWorld.java)
 
 ## 4. 项目总结
 
-### 优点与缺点（与同类方式对比）
+### 优点与缺点
 
-| 维度 | `ChatModel` + LangChain4j | 手写 HTTPS + JSON | 仅脚本 / curl 测通 |
-|------|---------------------------|---------------------|----------------------|
-| 上手速度 | 快（Builder + 枚举模型名） | 慢（字段与序列化自管） | 快但不进工程体系 |
-| 可测性 | 易 mock `ChatModel` | 难（需桩 HTTP） | 难纳入 CI |
-| 演进（换模型） | 换实现类与配置为主 | 大量胶水重写 | 与业务代码脱节 |
-| 典型缺点 | 单字符串 API 表达力有限 | 易与安全/观测脱节 | 不可维护 |
+| 维度 | ChatModel + LangChain4j | 手写 HTTPS + JSON | 仅 curl 测通 |
+|------|------------------------|-------------------|-------------|
+| 上手速度 | 快 | 慢 | 快但不进工程 |
+| 可测性 | 易 mock | 难 | 难纳入 CI |
+| 换模型 | 换配置为主 | 大量重写 | 脱节 |
+| 典型缺点 | 单字符串表达力有限 | 安全/观测脱节 | 不可维护 |
 
-**文字补充（优点）**：**上手路径极短**；**面向接口**便于单测替换；**与 AiServices / RAG 同轨**。
+### 适用 / 不适用场景
 
-**文字补充（缺点）**：**能力暴露最简**；**弹性与限流**需自拼；**厂商配置项**仍在 Builder 上，迁移要对照能力矩阵。
+**适用**：教学 PoC、连通性验证、多模型 smoke 测试。
 
-### 适用场景
+**不适用**：仅需一次 curl 证明密钥有效、强依赖某厂商私有流式协议。
 
-- 教学、PoC、网关后的「简单问答」微服务。
-- 在引入 `AiServices` 之前的 **底层连通性验证**。
-- 需要 **同一套 Java 工程** 内做多模型 smoke 测试。
+### 常见踩坑
 
-### 不适用场景
-
-- **仅需一次性 curl 证明密钥有效**、且无意维护 Java 服务——不必引入完整抽象。
-- **强依赖某厂商独有流式协议细节**且不接受任何封装——可能需更底层客户端（仍建议观测层统一）。
-
-### 注意事项
-
-- **密钥不可入仓**：`ApiKeys` 仅用于示例；生产请使用秘密管理。
-- **模型与数据合规**：输入是否出网、是否允许境外模型，需法务与运维前置确认。
-- **成本可见性**：同步 `String` 不直观展示 token 用量，应配合 `ChatModelListener` 或观测指标（第 36 章）。
-
-### 常见踩坑经验（生产向根因）
-
-1. **版本混用**：多模块时未用 **BOM** 对齐 `langchain4j` 与 `langchain4j-open-ai`（第 2 章）→ `NoSuchMethodError`。
-2. **代理与公司证书**：内网 MITM 导致 TLS 失败 → 需在 JVM / HTTP 客户端配置 truststore，而非误判 `ChatModel` 损坏。
-3. **把 Hello World 直接搬上生产**：无超时与限流 → 流量尖峰 **线程池耗尽**。
+1. 版本混用不用 BOM → NoSuchMethodError
+2. 公司 MITM 证书导致 TLS 失败 → 误判 ChatModel 损坏
+3. Hello World 直接搬上生产 → 无超时限流导致线程池耗尽
 
 ### 进阶思考题
 
-1. **若要将 `OpenAiChatModel` 换成 Ollama**，在 **依赖坐标** 与 **Builder 配置** 上最少改哪几处？（答案线索：第 2 章 BOM + 对应 provider 模块。）  
-2. **单测中如何不发起真实 HTTP** 仍覆盖 `model.chat(...)` 业务分支？（提示：mock / fake `ChatModel`；与第 12 章 AiServices 可组合。）
+1. 若要将 `OpenAiChatModel` 换成 Ollama，依赖坐标与 Builder 配置最少改哪几处？
+2. 单测中如何不发起真实 HTTP 仍覆盖 `model.chat(...)` 业务分支？
 
-### 推广计划提示（多部门）
+### 推广计划
 
 | 角色 | 建议阅读顺序 | 协作要点 |
-|------|----------------|----------|
-| **开发** | 第 2 章 → 本章 → 第 5～7 章 | **禁止**在生产每请求 `new` 模型客户端 |
-| **测试** | 本章 + 冒烟用例矩阵 | **错 Key / 超时 / 空提示** 三类用例 |
-| **运维** | 本章 + 第 9 章 | 出站域名、TLS、API Key 轮换 Runbook |
+|------|-------------|----------|
+| 开发 | 第 2 章 → 本章 → 第 5～7 章 | 禁止在生产每请求 new 模型客户端 |
+| 测试 | 本章 + 冒烟用例矩阵 | 错 Key / 超时 / 空提示 三类用例 |
+| 运维 | 本章 + 第 9 章 | 出站域名、TLS、Key 轮换 |
 
----
+### 检查清单
 
-### 本期给测试 / 运维的检查清单
+- **测试**：为空提示、超长提示、含敏感词各准备 1 条用例
+- **运维**：确认出站域名、TLS 版本与出口防火墙；对首次请求打点耗时（P95）作为基线
 
-**测试**：为「空提示」「超长提示」「含敏感词」各准备 1 条用例，断言返回非空且应用层有兜底文案；在 mock `ChatModel` 的稳定测试与「沙箱环境真实调用」冒烟测试之间划清分层。
-
-**运维**：确认应用出站域名、TLS 版本与出口防火墙；将 API Key 轮换流程写成 Runbook；对首次全链路成功请求打点耗时（P95）作为基线，后续变更只比对 delta。
-
-### 附录：相关 Maven 模块与源码类
+### 附录
 
 | 模块 | 说明 |
 |------|------|
 | `langchain4j-core` | `ChatModel` 接口 |
 | `langchain4j-open-ai` | `OpenAiChatModel` 实现 |
 
-推荐阅读（3～5 个）：`ChatModel.java`、`OpenAiChatModel.java`、`OpenAiChatModelName`。
+推荐阅读：`ChatModel.java`、`OpenAiChatModel.java`、`OpenAiChatModelName`。

@@ -2,113 +2,149 @@
 
 ## 1. 项目背景
 
-### 业务场景（拟真）
+性能团队发现 embed 占 P95 的 70%+，合规要求每条 segment 带业务 metadata 可审计。需要把 ingest 每一步摊在桌上：何时解析、切分、生成 Embedding、写入 store，以便断点续传与批处理对接（Spark/Flink）。
 
-性能团队发现 **embed 占 P95 70%+**，合规要求 **每条 segment 带业务 metadata** 可审计；需要把 **ingest 每一步**摊在桌上：**何时解析、切分、生成 Embedding、写入 store**，以便 **断点与批处理对接**（Spark/Flink）。
-
-### 痛点放大
-
-第 19 章已显式，**低层示例**进一步 **细粒度 API 顺序**（以 `_01_Low_Level_Naive_RAG_Example.java` 为准）。若 **只会用 EmbeddingStoreIngestor 默认**：**优化**无法插入批并行；**审计**无法逐段打标签。代价是 **样板膨胀**——需 **组织级 ingest SDK** 收敛。
+教程文件：`rag-examples/src/main/java/_4_low_level/_01_Low_Level_Naive_RAG_Example.java`
 
 ## 2. 项目设计：小胖、小白与大师的对话
 
 **小胖**：低层是不是跑得更快？
 
-**小白**：低层 = **性能更好** 吗？**何时必须下到低层**？团队会不会 **复制粘贴爆炸**？
+**小白**：低层性能更好吗？何时必须下到低层？会不会样板太多变成复制粘贴地狱？
 
-**大师**：**不必然更快**——性能来自 **批处理、并行、索引、正确分段**；低层是 **可插入优化**。必须低层时：**自定义 metadata**、**替换 splitter**、**观测每步耗时**、**离线 Spark 作业**。**样板多** → 沉淀 **内部 SDK**。**技术映射**：**低层 = 白盒，不等于自动快**。
-
-**小胖**：并行 embed 要注意啥？
-
-**小白**：低层和 **`EmbeddingStoreIngestor`** 冲突吗？**日志会爆炸吗？**
-
-**大师**：**限速、重试、配额**；**非确定性顺序** 要写入评测策略。两条路线：**ingestor 默认封装** vs **手写全控**——**二选一文档化**。日志对 **分段正文** **截断+脱敏**，仅 debug 全文。**技术映射**：**幂等批处理 = 重建索引生命线**。
-
----
+**大师**：低层**不必然更快**——性能来自批处理、并行、索引、正确分段。低层给你的是可插入优化的能力。必须下低层的场景：自定义 metadata、替换 splitter、每步耗时观测、离线 Spark。样板多就沉淀内部 SDK。**技术映射**：**低层 = 白盒可插入优化，不等于自动快**。
 
 ## 3. 项目实战
 
-### 环境准备
-
-- [`_01_Low_Level_Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_4_low_level/_01_Low_Level_Naive_RAG_Example.java)。
-
-### 分步实现
-
-纸笔绘制：`Document → segments → embeddings → store`。
+### 步骤 1：细粒度分段与耗时统计
 
 ```java
 long t0 = System.nanoTime();
-// 每个阶段后:
-// log.info("stage=X ms={}", (System.nanoTime()-t0)/1_000_000);
+
+// 1. 加载
+Document document = loadDocument(toPath("documents/"), new TextDocumentParser());
+log("Load", t0);
+
+// 2. 切分
+DocumentSplitter splitter = DocumentSplitters.recursive(300, 30);
+List<TextSegment> segments = splitter.split(document);
+log("Split", t0);
+System.out.println("Segments: " + segments.size());
+
+// 3. 嵌入
+EmbeddingModel embeddingModel = new BgeSmallEnV15QuantizedEmbeddingModel();
+List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+log("Embed", t0);
+
+// 4. 写入
+EmbeddingStore<TextSegment> store = new InMemoryEmbeddingStore<>();
+store.addAll(embeddings, segments);
+log("Store", t0);
 ```
 
-- embed **>70%** → 评估 **GPU/ONNX/批大小**；**parser 慢** → 先换 **PDF/Tika**（第 31 章）。  
-- **趣味**：同一文档跑两次 **segment 数是否一致**——不一致＝**随机/并发** 记入 SRE 手册。
+```java
+static void log(String stage, long start) {
+    long ms = (System.nanoTime() - start) / 1_000_000;
+    System.out.println(stage + ": " + ms + "ms");
+}
+```
+
+### 步骤 2：自定义 metadata
+
+```java
+// 为每个 segment 添加 metadata
+for (int i = 0; i < segments.size(); i++) {
+    TextSegment segment = segments.get(i);
+    segment.metadata().put("docId", document.metadata().getString("id"));
+    segment.metadata().put("chunkIndex", String.valueOf(i));
+    segment.metadata().put("version", "1.0");
+}
+```
+
+### 步骤 3：幂等批处理去重
+
+```java
+// 用 docId + chunkIndex 判重
+Set<String> existingIds = new HashSet<>();
+// 查询已存在的 ID ...
+List<TextSegment> newSegments = segments.stream()
+    .filter(s -> !existingIds.contains(
+        s.metadata().getString("docId") + "_" + s.metadata().getString("chunkIndex")))
+    .collect(Collectors.toList());
+```
+
+### 闯关任务
+
+| 难度 | 动手 | 过关标准 |
+|------|------|----------|
+| ★ | 在哪步最耗时？ | 发现瓶颈（通常 embed > 70%） |
+| ★★ | 同一文档跑两次 segment 数是否一致 | 检查随机性或并发问题 |
+| ★★★ | 并行 embed 后 batch 大小调优 | 找到最优线程数 |
+
+### 可能遇到的坑
+
+| 坑 | 表现 | 解法 |
+|----|------|------|
+| 并行 embed 限流 | QPS 过高被拒 | 加限速和队列 |
+| 日志包含分段正文 | 磁盘空间暴涨 | 截断+脱敏 |
+| 只在 embeddingStoreIngestor 默认路径 | 无法优化热点 | 低层 + 内部 SDK |
 
 ### 测试验证
 
-- 分段 **契约**（段数、段长范围）；批任务 **重试与死信**。
+```bash
+# 分段契约：段数范围、段长范围
+# 批任务：重试与死信队列
+```
 
 ### 完整代码清单
 
-[`_01_Low_Level_Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_4_low_level/_01_Low_Level_Naive_RAG_Example.java)，与 `Naive_RAG_Example` diff。
-
----
+[`_01_Low_Level_Naive_RAG_Example.java`](../../langchain4j-examples/rag-examples/src/main/java/_4_low_level/_01_Low_Level_Naive_RAG_Example.java)
 
 ## 4. 项目总结
 
-### 优点与缺点（与同类做法对比）
+### 优点与缺点
 
-| 维度 | 低层手写 | ingestor 默认 | Naive（第 19 章） |
-|------|----------|----------------|-------------------|
+| 维度 | 低层手写 | ingestor 默认 | Naive |
+|------|---------|-------------|-------|
 | 可观测 | 最高 | 低 | 高 |
 | 样板量 | 多 | 少 | 中 |
 | 灵活度 | 最高 | 低 | 中 |
-| 典型缺点 | 新人慢 | 难优化热点 | 介于中间 |
 
-### 适用场景
+### 适用 / 不适用场景
 
-- PoC 后 **性能调优**、**合规审计**、**离线重建索引**、与 **Spark/Flink** 衔接。
+**适用**：PoC 后性能调优、合规审计、离线重建索引、Spark/Flink 衔接。
 
-### 不适用场景
+**不适用**：团队无平台能力沉淀——低层代码会腐烂。
 
-- **团队无平台能力沉淀**——低层代码会腐烂。
+### 常见踩坑
 
-### 注意事项
-
-- **版本化**：分段参数与嵌入模型写入 **索引元信息**；**幂等** 去重。
-
-### 常见踩坑经验（生产向根因）
-
-1. **并行**导致 **评测不可重复**。  
-2. **分段边界** 切在表格行内 → 语义破碎。  
-3. **只盯 LLM** 不盯 **embed 队列积压**。
+1. 并行导致评测不可重复
+2. 分段边界切在表格行内 → 语义破碎
+3. 只盯 LLM 不盯 embed 队列积压
 
 ### 进阶思考题
 
-1. 如何将 **ingest 元数据**（如 `splitterProfile=v2`）与 **黄金集版本** 绑定？  
-2. **双写** 重建索引时如何做 **蓝绿切换**？
+1. 如何将 ingest 元数据（如 splitterProfile=v2）与黄金集版本绑定？
+2. 双写重建索引时如何做蓝绿切换？
 
-### 推广计划提示（多部门）
+### 推广计划
 
 | 角色 | 建议阅读顺序 | 协作要点 |
-|------|----------------|----------|
-| **开发** | 第 19 章 → 本章 | **组织级 SDK** |
-| **SRE** | Profiling 插头 | **embed CPU vs 向量写入 QPS** 分限流 |
-| **数据** | 批任务 | **独立扩容** |
+|------|-------------|----------|
+| 开发 | 第 19 章 → 本章 | 内部 SDK 化 |
+| SRE | Profiling | embed CPU vs 写入 QPS 分限流 |
+| 数据 | 批任务 | 独立扩容 |
 
----
+### 检查清单
 
-### 本期给测试 / 运维的检查清单
+- **测试**：分段结果契约测试（段数/段长范围）
+- **运维**：批任务独立扩容；embed CPU 与向量库写入 QPS 分开限流
 
-**测试**：对分段结果做 **契约测试**（段数范围、段长范围）；批处理任务做 **重试与死信队列**校验。  
-**运维**：批任务 **独立扩容**；对 **embed CPU** 与 **向量库写入 QPS** 分开限流。
-
-### 附录：相关 Maven 模块与源码类
+### 附录
 
 | 模块 | 说明 |
 |------|------|
 | `langchain4j` | `DocumentSplitter`、`EmbeddingStore` |
 | `langchain4j-core` | `Embedding`、`TextSegment` |
 
-推荐阅读：`_01_Low_Level_Naive_RAG_Example.java`，并与 `Naive_RAG_Example` diff。
+推荐阅读：`_01_Low_Level_Naive_RAG_Example.java`，与 `Naive_RAG_Example` diff。
