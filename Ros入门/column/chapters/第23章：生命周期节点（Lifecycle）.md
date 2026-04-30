@@ -1,4 +1,4 @@
-# B11 · 生命周期节点（Lifecycle）
+# 第23章：生命周期节点（Lifecycle）
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 
@@ -118,6 +118,12 @@ ros2 lifecycle set /lc_talker activate
 1. **未 activate 已发 topic**：下游以为在工作。
 2. **错误处理**里未 `on_error` 清理。
 3. **Launch 顺序**与 lifecycle 转移 race。
+
+### 注意事项
+
+- **版本兼容**：所有命令以 Humble 与 [ENV.md](../ENV.md) 为基线，其他发行版需查 `--help` 与官方文档。
+- **配置边界**：不要把实验参数直接带入生产；先记录硬件、RMW、QoS、网络与时钟条件。
+- **安全边界**：涉及远程调试、容器权限、证书或硬件接口时，先按最小权限原则收敛。
 
 ### 思考题
 

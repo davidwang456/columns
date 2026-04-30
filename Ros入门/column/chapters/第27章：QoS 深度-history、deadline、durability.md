@@ -1,4 +1,4 @@
-# M02 · QoS 深度：history、deadline、durability
+# 第27章：QoS 深度-history、deadline、durability
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 

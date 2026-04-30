@@ -1,4 +1,4 @@
-# B10 · Launch：XML/Python 与参数替换
+# 第22章：Launch-XML-Python 与参数替换
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 
@@ -168,12 +168,24 @@ Node(
 2. **相对路径 params 文件**解析失败。
 3. **namespace 加倍**（include 时）。
 
+### 注意事项
+
+- **版本兼容**：所有命令以 Humble 与 [ENV.md](../ENV.md) 为基线，其他发行版需查 `--help` 与官方文档。
+- **配置边界**：不要把实验参数直接带入生产；先记录硬件、RMW、QoS、网络与时钟条件。
+- **安全边界**：涉及远程调试、容器权限、证书或硬件接口时，先按最小权限原则收敛。
+
 ### 思考题
 
 1. 何时选 Python Launch 而非 XML？
 2. `push_ros_namespace` 的作用？
 
 **答案**：见 [APPENDIX-answers.md](../APPENDIX-answers.md#b10)；Lifecycle 见 [B11](第23章：生命周期节点（Lifecycle）.md)。
+
+### 推广计划提示
+
+- **开发**：把 **Launch：XML/Python 与参数替换** 的最小 demo、关键参数与失败日志写入项目 README。
+- **测试**：抽取 1–2 条可重复的 smoke 用例，记录输入、预期输出与回归频率。
+- **运维**：整理运行环境、启动命令、日志位置与告警阈值，便于现场排障。
 
 ---
 
