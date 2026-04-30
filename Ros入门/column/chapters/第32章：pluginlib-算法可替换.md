@@ -2,7 +2,12 @@
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 
-## 1 项目背景
+> **版本**：ROS 2 Humble（Ubuntu 22.04，统一环境见 [ENV.md](../ENV.md)）
+> **定位**：中级篇 · 面向核心开发与运维，强调多机、性能、可观测性与工程化交付。
+> **前置阅读**：建议先掌握基础篇的 Topic、QoS、Launch、TF2、Action 与 rosbag2。
+> **预计阅读**：40 分钟 | 实战耗时：60–120 分钟
+
+## 1. 项目背景
 
 ### 业务场景
 
@@ -18,7 +23,30 @@ Nav2 允许在 YAML 更换 **DWB**、**TEB**、**Regulated Pure Pursuit** 等控
 
 ---
 
-## 2 项目设计
+### 业务指标与交付边界
+
+本章不追求“把所有概念一次讲完”，而是交付一个可复现的工程切片：
+
+1. **可运行**：至少有一组命令、脚本或配置能够在 Humble 环境中执行。
+2. **可观察**：运行后能用 `ros2` CLI、日志、RViz、rosbag2 或系统工具看到明确现象。
+3. **可交接**：读者能把 **pluginlib-算法可替换** 的关键假设、输入输出、失败模式写进项目 README 或排障手册。
+
+**本章交付目标**：完成一个围绕 **pluginlib-算法可替换** 的最小闭环，并留下可复盘的命令、截图或日志证据。
+
+## 2. 项目设计
+
+### 总体架构图
+
+```mermaid
+flowchart LR
+  requirement[业务需求] --> concept["pluginlib-算法可替换"]
+  concept --> config[配置与代码]
+  config --> runtime[运行时观测]
+  runtime --> verify[测试验证]
+  verify --> runbook[交付与复盘]
+```
+
+这张图用于对齐 `example.md` 的“端到端项目链路”写法：先从业务需求出发，再落到配置/代码，最后用观测与验收把结论闭环。
 
 ### 剧本对话
 
@@ -28,7 +56,7 @@ Nav2 允许在 YAML 更换 **DWB**、**TEB**、**Regulated Pure Pursuit** 等控
 
 **大师**：**dlopen** 解决「**加载哪个文件**」；**pluginlib + class_loader** 解决「**同一基类下多实现、字符串 ID 选择、版本与导出声明**」——和 **Nav2 在 yaml 里换 controller 名称**一一对应。导出失败往往表现为：**`ros2 plugin list` 为空**或 **加载抛异常**，根因常在 **`plugin.xml` 路径未安装**或 **`ament_index` 未注册**。
 
-**技术映射**：**pluginlib** = **类型安全的插件注册表** + **package 资源索引**。
+**技术映射 #1**：**pluginlib** = **类型安全的插件注册表** + **package 资源索引**。
 
 ---
 
@@ -36,7 +64,7 @@ Nav2 允许在 YAML 更换 **DWB**、**TEB**、**Regulated Pure Pursuit** 等控
 
 **大师**：这是 **ABI 兼容性**问题：团队要对 **major 版本**做约束；CI 要跑 **`ament_export_interfaces` 一致性**与**集成测试**。生产上 **pin 版本**与 **平滑迁移窗口**比「热插拔炫技」重要。
 
-**技术映射**：**插件模型**把 **链接期耦合** 推迟为 **运行时耦合**，但不消灭**版本治理**。
+**技术映射 #2**：**插件模型**把 **链接期耦合** 推迟为 **运行时耦合**，但不消灭**版本治理**。
 
 ---
 
@@ -44,13 +72,30 @@ Nav2 允许在 YAML 更换 **DWB**、**TEB**、**Regulated Pure Pursuit** 等控
 
 ---
 
-## 3 项目实战
+## 3. 项目实战
 
 ### 环境准备
 
 与 [ENV.md](../ENV.md) 一致：**Ubuntu 22.04 + ROS 2 Humble**，`source /opt/ros/humble/setup.bash`。
 
 本章额外依赖：`sudo apt install ros-humble-nav2-controller`（或完整 **`ros-humble-nav2-bringup`**；包名以 `apt search nav2 controller` 为准）。
+
+**项目目录结构**（建议随章落地到自己的工作区）：
+
+```text
+ros2_ws/
+  src/
+    pluginlib_算法可替换/
+      package.xml
+      launch/
+      config/
+      scripts/
+      test/
+  docs/
+    runbook.md      # 记录命令、预期输出、截图或日志
+```
+
+说明：若本章以阅读源码、配置或运维演练为主，可以把 `scripts/` 换成 `notes/`，但仍建议保留 `config/` 与 `test/`，方便后续复盘。
 
 ### 分步实现
 
@@ -93,14 +138,28 @@ FollowPath:
 - **说明**：`plugin.xml` 在 **源码包** 中的位置（**`nav2_regulated_pure_pursuit_controller`** 等）供对照阅读。
 - Git 占位：**待补充**。
 
+### 交付物清单
+
+- **README**：说明 **pluginlib-算法可替换** 的业务背景、运行命令、预期输出与常见失败。
+- **配置/代码**：保留本章涉及的 launch、YAML、脚本或源码片段，避免只存截图。
+- **证据材料**：至少保留一份终端输出、RViz 截图、rosbag2 片段、trace 或日志摘录。
+- **复盘记录**：记录“为什么这样配置”，尤其是 QoS、RMW、TF、namespace、安全和性能相关取舍。
+
 ### 测试验证
 
 - `ros2 plugin list` **含** 所选插件；**仿真导航** 无 **Failed to load plugin**。
 - **手工验收**：文档中记录 **插件全名** 与 **一行参数** 的对应关系。
 
+### 验收清单
+
+- [ ] 能在干净终端重新 `source /opt/ros/humble/setup.bash` 后复现本章命令。
+- [ ] 能指出 **pluginlib-算法可替换** 的核心输入、输出、关键参数与失败边界。
+- [ ] 能把至少一条失败案例写成“现象 → 排查命令 → 根因 → 修复”的四段式记录。
+- [ ] 能说明本章内容与相邻章节的依赖关系，避免把单点技巧误当成系统方案。
+
 ---
 
-## 4 项目总结
+## 4. 项目总结
 
 ### 优点与缺点
 
@@ -151,3 +210,5 @@ FollowPath:
 ---
 
 **导航**：[上一章：M06](第31章：传感器驱动与标定流程.md) ｜ [总目录](../INDEX.md) ｜ [下一章：M08](第33章：rosbag2 进阶-录制策略与回放测试.md)
+
+> **本章完**。你已经完成 **pluginlib-算法可替换** 的端到端学习：从业务场景、设计对话、实战命令到验收清单。下一步建议把本章交付物纳入自己的 ROS 2 工作区，并在后续章节中持续复用同一套 README、配置和测试记录方式。

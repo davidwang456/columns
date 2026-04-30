@@ -2,7 +2,12 @@
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 
-## 1 项目背景
+> **版本**：ROS 2 Humble（Ubuntu 22.04，统一环境见 [ENV.md](../ENV.md)）
+> **定位**：中级篇 · 面向核心开发与运维，强调多机、性能、可观测性与工程化交付。
+> **前置阅读**：建议先掌握基础篇的 Topic、QoS、Launch、TF2、Action 与 rosbag2。
+> **预计阅读**：40 分钟 | 实战耗时：60–120 分钟
+
+## 1. 项目背景
 
 ### 业务场景
 
@@ -25,7 +30,30 @@ flowchart LR
 
 ---
 
-## 2 项目设计
+### 业务指标与交付边界
+
+本章不追求“把所有概念一次讲完”，而是交付一个可复现的工程切片：
+
+1. **可运行**：至少有一组命令、脚本或配置能够在 Humble 环境中执行。
+2. **可观察**：运行后能用 `ros2` CLI、日志、RViz、rosbag2 或系统工具看到明确现象。
+3. **可交接**：读者能把 **QoS 深度-history、deadline、durability** 的关键假设、输入输出、失败模式写进项目 README 或排障手册。
+
+**本章交付目标**：完成一个围绕 **QoS 深度-history、deadline、durability** 的最小闭环，并留下可复盘的命令、截图或日志证据。
+
+## 2. 项目设计
+
+### 总体架构图
+
+```mermaid
+flowchart LR
+  requirement[业务需求] --> concept["QoS 深度-history、deadline、durability"]
+  concept --> config[配置与代码]
+  config --> runtime[运行时观测]
+  runtime --> verify[测试验证]
+  verify --> runbook[交付与复盘]
+```
+
+这张图用于对齐 `example.md` 的“端到端项目链路”写法：先从业务需求出发，再落到配置/代码，最后用观测与验收把结论闭环。
 
 ### 剧本对话
 
@@ -35,7 +63,7 @@ flowchart LR
 
 **大师**：它描述的是 **DDS 样本在 DataWriter 端对 late joiner 的可见性语义**，不是文件系统。**Map** 类「**先有后接**」场景常用 **TRANSIENT_LOCAL + RELIABLE**，让后起的订阅者仍能拿到**最后一帧有效地图**（受 **history depth** 约束）。
 
-**技术映射**：**Durability::TRANSIENT_LOCAL** ≈ **带存活期的最近值广播**。
+**技术映射 #1**：**Durability::TRANSIENT_LOCAL** ≈ **带存活期的最近值广播**。
 
 ---
 
@@ -43,7 +71,7 @@ flowchart LR
 
 **大师**：**KEEP_ALL** 需要 DDS **resource_limits** 支持，且对**高速持续流**极危险——更像给**极少量关键状态**用。传感器一般用 **KEEP_LAST(depth)**，depth 与 **处理周期、允许延迟**共同设计。
 
-**技术映射**：**KEEP_LAST(depth)** = **有界环形缓冲**。
+**技术映射 #2**：**KEEP_LAST(depth)** = **有界环形缓冲**。
 
 ---
 
@@ -51,7 +79,7 @@ flowchart LR
 
 **大师**：用于**监控**「多久没新样本」——可作为**健康信号**，也可能成为**误报源**（如果和真实周期不配）。要与 **传感器标定帧率、网络抖动**留裕量。
 
-**技术映射**：**Deadline** = **可观测 SLA（软）**。
+**技术映射 #3**：**Deadline** = **可观测 SLA（软）**。
 
 ---
 
@@ -61,7 +89,7 @@ flowchart LR
 
 **大师**：可以粗记：**Deadline** 约束「**相邻样本之间**别超过多久」；**Lifespan** 约束「这帧**在系统里还算数多久**」——对**传感器**有时用来丢**过期的 stale 数据**。**Liveliness** 更像**心跳契约**：约定 publisher 多久要「吱一声」，订阅侧可据此做 watchdog，和 **diagnostics**（**M10**）可以挂钩，但别和「应用业务心跳」混为一谈。
 
-**技术映射**：**Deadline/Lifespan/Liveliness** 三元组分别从 **间隔/存活/参与意愿** 描述时间语义。
+**技术映射 #4**：**Deadline/Lifespan/Liveliness** 三元组分别从 **间隔/存活/参与意愿** 描述时间语义。
 
 ---
 
@@ -69,7 +97,7 @@ flowchart LR
 
 **大师**：工程上两条路：**在线 late-join**（靠 durability） vs **回放/脚本重发**。**RViz 黑屏**九成是 **「订阅端 QoS  profile ≠ 地图发布端」**，而不是 RViz「坏了」。排障先看 **`ros2 topic info -v`** 的 **Compatibility** 段，比改代码快。
 
-**技术映射**：**QoS 合约** 优先于 **GUI 玄学**。
+**技术映射 #5**：**QoS 合约** 优先于 **GUI 玄学**。
 
 ---
 
@@ -77,17 +105,34 @@ flowchart LR
 
 **大师**：背表不如背**方法论**：**先对齐 Reliability 档位**，再对齐 **Durability**（late join），再调 **depth**。**KEEP_ALL** 在多数传感器上都是**危险默认值**——除非你真理解 **resource_limits** 与 **内存上界**（否则别上生产）。
 
-**技术映射**：**QoS 调参** = **合约思维 + 资源上界证明**。
+**技术映射 #6**：**QoS 调参** = **合约思维 + 资源上界证明**。
 
 ---
 
-## 3 项目实战
+## 3. 项目实战
 
 ### 环境准备
 
 与 [ENV.md](../ENV.md) 一致：**Ubuntu 22.04 + ROS 2 Humble**，每终端 `source /opt/ros/humble/setup.bash`。
 
 本章额外依赖：沿用 [B05](第17章：QoS 入门-可靠与尽力而为.md) 实验包，或自建 **`qos_adv`**（`ament_python` + `rclpy`）；若跑 **Nav2 / map_server**，按需 `sudo apt install ros-humble-nav2-bringup ros-humble-map-server`（包名以 `apt search` 为准）。
+
+**项目目录结构**（建议随章落地到自己的工作区）：
+
+```text
+ros2_ws/
+  src/
+    QoS_深度_history_deadline_durabili/
+      package.xml
+      launch/
+      config/
+      scripts/
+      test/
+  docs/
+    runbook.md      # 记录命令、预期输出、截图或日志
+```
+
+说明：若本章以阅读源码、配置或运维演练为主，可以把 `scripts/` 换成 `notes/`，但仍建议保留 `config/` 与 `test/`，方便后续复盘。
 
 ### 分步实现
 
@@ -147,14 +192,28 @@ self.sub = self.create_subscription(
 - **外链**：[B05](第17章：QoS 入门-可靠与尽力而为.md)、DDS QoS 兼容表（随 **RMW** 查阅）。
 - Git 占位：**待补充**。
 
+### 交付物清单
+
+- **README**：说明 **QoS 深度-history、deadline、durability** 的业务背景、运行命令、预期输出与常见失败。
+- **配置/代码**：保留本章涉及的 launch、YAML、脚本或源码片段，避免只存截图。
+- **证据材料**：至少保留一份终端输出、RViz 截图、rosbag2 片段、trace 或日志摘录。
+- **复盘记录**：记录“为什么这样配置”，尤其是 QoS、RMW、TF、namespace、安全和性能相关取舍。
+
 ### 测试验证
 
 - **late joiner**：先起 **`map_server`**，**后**开 RViz，地图仍能显示（**TRANSIENT_LOCAL** 正确时）。
 - **手工验收**：一页 **Markdown 表**：话题名、四元组 QoS、**是否 late-join 成功**。
 
+### 验收清单
+
+- [ ] 能在干净终端重新 `source /opt/ros/humble/setup.bash` 后复现本章命令。
+- [ ] 能指出 **QoS 深度-history、deadline、durability** 的核心输入、输出、关键参数与失败边界。
+- [ ] 能把至少一条失败案例写成“现象 → 排查命令 → 根因 → 修复”的四段式记录。
+- [ ] 能说明本章内容与相邻章节的依赖关系，避免把单点技巧误当成系统方案。
+
 ---
 
-## 4 项目总结
+## 4. 项目总结
 
 ### 优点与缺点
 
@@ -199,3 +258,5 @@ self.sub = self.create_subscription(
 ---
 
 **导航**：[上一章：M01](第26章：DDS 发现、域（Domain）与跨机通信.md) ｜ [总目录](../INDEX.md) ｜ [下一章：M03](第28章：命名空间、重映射与多实例部署.md)
+
+> **本章完**。你已经完成 **QoS 深度-history、deadline、durability** 的端到端学习：从业务场景、设计对话、实战命令到验收清单。下一步建议把本章交付物纳入自己的 ROS 2 工作区，并在后续章节中持续复用同一套 README、配置和测试记录方式。

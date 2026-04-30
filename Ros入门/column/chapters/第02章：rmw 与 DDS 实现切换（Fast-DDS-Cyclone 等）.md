@@ -2,7 +2,12 @@
 
 > 本章目标字数：3000–5000。统一环境见 [ENV.md](../ENV.md)。
 
-## 1 项目背景
+> **版本**：ROS 2 Humble（Ubuntu 22.04，统一环境见 [ENV.md](../ENV.md)）
+> **定位**：高级篇 · 面向架构师与资深开发，强调源码边界、极端场景与生产取舍。
+> **前置阅读**：建议先完成基础篇与中级篇相关章节，尤其关注执行器、QoS、Launch、观测性与 SRE。
+> **预计阅读**：45 分钟 | 实战耗时：90–150 分钟
+
+## 1. 项目背景
 
 ### 业务场景
 
@@ -18,7 +23,30 @@
 
 ---
 
-## 2 项目设计
+### 业务指标与交付边界
+
+本章不追求“把所有概念一次讲完”，而是交付一个可复现的工程切片：
+
+1. **可运行**：至少有一组命令、脚本或配置能够在 Humble 环境中执行。
+2. **可观察**：运行后能用 `ros2` CLI、日志、RViz、rosbag2 或系统工具看到明确现象。
+3. **可交接**：读者能把 **rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）** 的关键假设、输入输出、失败模式写进项目 README 或排障手册。
+
+**本章交付目标**：完成一个围绕 **rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）** 的最小闭环，并留下可复盘的命令、截图或日志证据。
+
+## 2. 项目设计
+
+### 总体架构图
+
+```mermaid
+flowchart LR
+  requirement[业务需求] --> concept["rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）"]
+  concept --> config[配置与代码]
+  config --> runtime[运行时观测]
+  runtime --> verify[测试验证]
+  verify --> runbook[交付与复盘]
+```
+
+这张图用于对齐 `example.md` 的“端到端项目链路”写法：先从业务需求出发，再落到配置/代码，最后用观测与验收把结论闭环。
 
 ### 剧本对话
 
@@ -28,7 +56,7 @@
 
 **大师**：**环境变量** `RMW_IMPLEMENTATION`（以及 `ROS_LOCALHOST_ONLY`、XML 配置路径）决定**进程实际加载的 `rmw_*` 动态库**。同一工作空间若**链接阶段和运行时不一致**，会出现「编过了跑起来 topic 行为怪」。上线原则是：**每个交付镜像只 pin 一种 RMW**，把差异写进 **Runbook**；对比实验时用**两支隔离容器的 A/B**，而不是在同一 shell 里来回 export。
 
-**技术映射**：**rmw** = **DDS API ↔ ROS graph 语义** 的**适配层**。
+**技术映射 #1**：**rmw** = **DDS API ↔ ROS graph 语义** 的**适配层**。
 
 ---
 
@@ -36,7 +64,7 @@
 
 **大师**：不同实现默认 **共享内存**、**异步写线程**、**flow controller** 不一样。你看到的「延迟」可能是 **p50**，要同时看 **p99 与尾延迟**。**XML**（Fast-DDS `FASTRTPS_DEFAULT_PROFILES_FILE` 或 Cyclone `CYCLONEDDS_URI`）调的是 **DDS 内部**，不是 ROS 参数——调完要用 **`ros2 topic hz` + 系统 profiler** 对照，避免体感调参。
 
-**技术映射**：**传输层调优** = **DDS QoS + 网络栈 + 进程调度** 联调。
+**技术映射 #2**：**传输层调优** = **DDS QoS + 网络栈 + 进程调度** 联调。
 
 ---
 
@@ -44,13 +72,13 @@
 
 **大师**：多数实现支持 **interface allowlist / multicast 地址** 类配置——这是 **中级运维必备**，否则你在应用里改再多 topic 名也救不了。**抓包**先确认 **RTPS 从哪个 iface 出去**，再改 XML，比盲改 **ROS_DOMAIN_ID** 更有效。
 
-**技术映射**：**Network stack 选择** ∈ **部署配置**，不是业务代码。
+**技术映射 #3**：**Network stack 选择** ∈ **部署配置**，不是业务代码。
 
 ---
 
 **大师**：若走向 **零拷贝/共享内存**（**A03**），**两端 RMW 与类型支持**更要一致；否则「开发机 OK，车上炸」。**`ros2 doctor --report`** 作为基线检查写进 CI。
 
-**技术映射**：**RMW 选型** 与 **loan/shm 能力** 强相关。
+**技术映射 #4**：**RMW 选型** 与 **loan/shm 能力** 强相关。
 
 ---
 
@@ -62,7 +90,7 @@
 
 **大师**：**链接期**：各包依赖 **`rmw_implementation`/`rmw_implementation_cmake`**，最终 **可执行**实际加载哪个 **`.so`** 由 **运行时** `RMW_IMPLEMENTATION`（及默认搜索顺序）决定。**混装**时最危险的是**自以为换成功**：用 **`ldd`/`readelf`** 看 **rcl** 依赖的 **`librmw_*`**，并在目标进程 **`/proc/<pid>/environ`** 里 grep **`RMW_IMPLEMENTATION`**。文档里的 export 若写进 **systemd**/**Launch** 与交互 shell **不一致**，就会出现「**人眼 export 了、服务没 export**」。
 
-**技术映射**：**Build-time RMW**（若静态链接某实现）vs **Run-time dlopen** —— 以 **`ros2 doctor`** 与 **进程环境** 为准绳。
+**技术映射 #5**：**Build-time RMW**（若静态链接某实现）vs **Run-time dlopen** —— 以 **`ros2 doctor`** 与 **进程环境** 为准绳。
 
 ---
 
@@ -70,7 +98,7 @@
 
 **大师**：两套 **参数模型**不同，别指望单一文件跨实现。运维应维护 **两张 Runbook 片段**：**FastRTPs / Cyclone 各自模板**，并在矩阵里标明「**此调参仅对实现 X 生效**」。升级 **DDS 小版本**时，重点回归 **发现延迟、共享内存开关、SHM 路径权限**（与 **A09** 线程模型耦合时要留 CPU headroom）。
 
-**技术映射**：**RMW 配置** = **实现私有**；**ROS 层 QoS** 才是「跨实现」语义（仍受 **兼容层**约束）。
+**技术映射 #6**：**RMW 配置** = **实现私有**；**ROS 层 QoS** 才是「跨实现」语义（仍受 **兼容层**约束）。
 
 ---
 
@@ -78,17 +106,17 @@
 
 **大师**：**换实现**有时改变 **默认 discovery 行为**与 **UDP 参数**，可能缓解；但若根因是 **拓扑规模 + 广播域过大**，应 **分层治理**：**域切开**、**Server**、**VLAN**。别把 **RMW A/B** 当架构课——那是**战术旋钮**。
 
-**技术映射**：**RMW 差异** ⊂ **DDS 实现差异** ⊂ **网络拓扑约束**。
+**技术映射 #7**：**RMW 差异** ⊂ **DDS 实现差异** ⊂ **网络拓扑约束**。
 
 ---
 
 **大师**：发布镜像时 **同时打印**：`**ROS_DISTRO**`、`**RMW_IMPLEMENTATION**`、**`FASTRTPS_DEFAULT_PROFILES_FILE` / `CYCLONEDDS_URI` 解析路径是否存在**——与 **内核版本**一行，便于客户日志一张图定因。
 
-**技术映射**：**可支撑工单字段** = **版本向量**，不是一句「最新」。
+**技术映射 #8**：**可支撑工单字段** = **版本向量**，不是一句「最新」。
 
 ---
 
-## 3 项目实战
+## 3. 项目实战
 
 ### 环境准备
 
@@ -102,6 +130,23 @@ sudo apt install -y ros-humble-rmw-cyclonedds-cpp ros-humble-rmw-fastrtps-cpp
 ```
 
 可选：`python3-pip`（无）、`/tmp` 下放 XML 配置文件。
+
+**项目目录结构**（建议随章落地到自己的工作区）：
+
+```text
+ros2_ws/
+  src/
+    rmw_与_DDS_实现切换_Fast_DDS_Cyclone_/
+      package.xml
+      launch/
+      config/
+      scripts/
+      test/
+  docs/
+    runbook.md      # 记录命令、预期输出、截图或日志
+```
+
+说明：若本章以阅读源码、配置或运维演练为主，可以把 `scripts/` 换成 `notes/`，但仍建议保留 `config/` 与 `test/`，方便后续复盘。
 
 ### 分步实现
 
@@ -178,14 +223,28 @@ tr '\0' '\n' < /proc/$PID/environ | grep RMW
 - **配置文件**：本机路径示意 `/tmp/cyclone.xml`；生产应放入 **版本控制** 与 **安装规则**。
 - Git 外链占位：**待补充**。
 
+### 交付物清单
+
+- **README**：说明 **rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）** 的业务背景、运行命令、预期输出与常见失败。
+- **配置/代码**：保留本章涉及的 launch、YAML、脚本或源码片段，避免只存截图。
+- **证据材料**：至少保留一份终端输出、RViz 截图、rosbag2 片段、trace 或日志摘录。
+- **复盘记录**：记录“为什么这样配置”，尤其是 QoS、RMW、TF、namespace、安全和性能相关取舍。
+
 ### 测试验证
 
 - **A/B 对比**：同一 **`ros2 topic hz /chatter`**，在 **Fast-DDS 默认** 与 **Cyclone** 下各录 1 分钟 CSV（手工即可），对比 **均值/方差**（深入见 [M09](第34章：性能与带宽-topic hz-bw、系统剖析入门.md)）。
 - **回归**：`unset RMW_IMPLEMENTATION` 后 **`ros2 doctor`** 恢复基线，确认无**环境泄漏**。
 
+### 验收清单
+
+- [ ] 能在干净终端重新 `source /opt/ros/humble/setup.bash` 后复现本章命令。
+- [ ] 能指出 **rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）** 的核心输入、输出、关键参数与失败边界。
+- [ ] 能把至少一条失败案例写成“现象 → 排查命令 → 根因 → 修复”的四段式记录。
+- [ ] 能说明本章内容与相邻章节的依赖关系，避免把单点技巧误当成系统方案。
+
 ---
 
-## 4 项目总结
+## 4. 项目总结
 
 ### 优点与缺点
 
@@ -236,3 +295,5 @@ tr '\0' '\n' < /proc/$PID/environ | grep RMW
 ---
 
 **导航**：[上一章：A01](第01章：rcl-rclcpp 执行模型与源码导读.md) ｜ [总目录](../INDEX.md) ｜ [下一章：A03](第03章：零拷贝与 loaned message（能力与边界）.md)
+
+> **本章完**。你已经完成 **rmw 与 DDS 实现切换（Fast-DDS-Cyclone 等）** 的端到端学习：从业务场景、设计对话、实战命令到验收清单。下一步建议把本章交付物纳入自己的 ROS 2 工作区，并在后续章节中持续复用同一套 README、配置和测试记录方式。
