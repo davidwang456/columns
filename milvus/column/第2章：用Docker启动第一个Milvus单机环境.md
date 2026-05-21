@@ -32,11 +32,11 @@
 
 **大师**："那就 Standalone。来，我用一个比喻帮你理清三种模式——"
 
-| 模式 | 类比 | 组成 | 适用场景 |
-|------|------|------|---------|
-| **Lite** | 学校食堂的盒饭 | 一个进程包含了所有组件 | Python 本地开发（`pip install pymilvus[milvus_lite]`），零依赖 |
-| **Standalone** | 小餐馆的后厨 | 单一实例，但独立部署 etcd + MinIO + Milvus | 个人开发机、小规模测试、教学演示 |
-| **Cluster** | 五星酒店中央厨房 | 多节点分布式：Proxy ×N + Coord ×N + Node ×N | 生产环境，需要高可用和横向扩展 |
+| 模式             | 类比       | 组成                                   | 适用场景                                                 |
+| -------------- | -------- | ------------------------------------ | ---------------------------------------------------- |
+| **Lite**       | 学校食堂的盒饭  | 一个进程包含了所有组件                          | Python 本地开发（`pip install pymilvus[milvus_lite]`），零依赖 |
+| **Standalone** | 小餐馆的后厨   | 单一实例，但独立部署 etcd + MinIO + Milvus     | 个人开发机、小规模测试、教学演示                                     |
+| **Cluster**    | 五星酒店中央厨房 | 多节点分布式：Proxy ×N + Coord ×N + Node ×N | 生产环境，需要高可用和横向扩展                                      |
 
 **小白**："Lite 模式一个进程包含所有组件——那它和 Standalone 的核心区别是什么？性能会差很多吗？"
 
@@ -80,12 +80,12 @@
    └─────────┘   └────────────┘   └──────────┘
 ```
 
-| 服务 | 默认端口 | 职责 | 挂了会怎样 |
-|------|---------|------|-----------|
-| **etcd** | 2379 | 存储所有元数据：Collection 定义、Schema、Segment 状态、节点注册信息 | 整个集群不可用（核心元数据丢失） |
-| **MinIO** | 9000, 9001 | 持久化存储 Binlog、索引文件、Delta 日志（模拟生产中的 S3） | 无法写入、无法加载已存数据（但已在内存的 Collection 仍可搜索） |
-| **Pulsar** | 6650 | 解耦写入链路的消息队列，保证数据不丢失 | 无法写入新数据（但已消费的数据不受影响） |
-| **Milvus** | 19530 | 核心服务进程，包含所有 Coordinator 和 Node 组件的 Standalone 合体版本 | 所有服务不可用 |
+| 服务         | 默认端口       | 职责                                                 | 挂了会怎样                                 |
+| ---------- | ---------- | -------------------------------------------------- | ------------------------------------- |
+| **etcd**   | 2379       | 存储所有元数据：Collection 定义、Schema、Segment 状态、节点注册信息     | 整个集群不可用（核心元数据丢失）                      |
+| **MinIO**  | 9000, 9001 | 持久化存储 Binlog、索引文件、Delta 日志（模拟生产中的 S3）              | 无法写入、无法加载已存数据（但已在内存的 Collection 仍可搜索） |
+| **Pulsar** | 6650       | 解耦写入链路的消息队列，保证数据不丢失                                | 无法写入新数据（但已消费的数据不受影响）                  |
+| **Milvus** | 19530      | 核心服务进程，包含所有 Coordinator 和 Node 组件的 Standalone 合体版本 | 所有服务不可用                               |
 
 **小胖**："我懂了大半——etcd 是'账本'，MinIO 是'仓库'，Pulsar 是'传送带'，Milvus 是'工厂'本身。但为啥要分开部署，不能塞进一个容器？"
 
@@ -106,6 +106,7 @@
 **大师**："有三层验证手段，从简单到深入——"
 
 **1. 端口检测（最浅）**
+
 ```bash
 # 检查 Milvus 19530 端口是否在监听
 curl http://localhost:19530/healthz
@@ -116,6 +117,7 @@ curl http://localhost:19530/healthz
 Attu 是 Milvus 官方提供的 Web GUI 管理工具。在浏览器打开 `http://localhost:3000`，输入连接地址 `localhost:19530`，就能看到所有 Collection、数据预览、索引状态和搜索测试界面。
 
 **3. Python SDK 验证（最可靠）**
+
 ```python
 from pymilvus import connections, utility
 connections.connect(host="localhost", port="19530")
@@ -156,12 +158,12 @@ curl http://localhost:19530/healthz
 
 ### 3.2 环境准备
 
-| 依赖 | 最低版本 | 验证命令 |
-|------|---------|---------|
-| Docker | 20.10+ | `docker --version` |
-| Docker Compose | v2.0+ | `docker compose version` |
-| Python | 3.10+ | `python --version` |
-| 内存 | 4GB 可用 | `docker stats` 启动后观察 |
+| 依赖             | 最低版本   | 验证命令                     |
+| -------------- | ------ | ------------------------ |
+| Docker         | 20.10+ | `docker --version`       |
+| Docker Compose | v2.0+  | `docker compose version` |
+| Python         | 3.10+  | `python --version`       |
+| 内存             | 4GB 可用 | `docker stats` 启动后观察     |
 
 ### 3.3 分步实现
 
@@ -293,6 +295,7 @@ echo ""
 ```
 
 **预期输出**：
+
 ```
 === etcd ===
 {"health":"true"}
@@ -341,6 +344,7 @@ print(f"✓ 全部验证通过！Milvus Standalone 环境就绪")
 ```
 
 **预期输出**：
+
 ```
 ✓ 连接成功！Milvus 版本: v2.5.5
 ✓ Collection 'hello_milvus' 创建成功
@@ -382,14 +386,14 @@ docker compose down -v && rm -rf ./volumes
 
 ### 3.4 可能遇到的坑及解决方法
 
-| 问题 | 现象 | 解决方法 |
-|------|------|---------|
-| **端口冲突** | `Error: port is already allocated` | 检查 19530/2379/9000/9001/9091 是否被占用：`netstat -ano \| findstr 19530`；在 compose 文件中修改端口映射 |
-| **内存不足** | Milvus 容器反复重启，日志显示 OOM Killed | 给 MinIO 和 etcd 设置 `mem_limit`：在 `minio` 服务下添加 `deploy: resources: limits: {memory: 256M}` |
-| **etcd 启动失败** | Milvus 日志显示 `context deadline exceeded` 连接 etcd | 确认 etcd 健康检查通过后再启动 Milvus，或增加 `depends_on` 的等待时间 |
-| **MinIO 权限错误** | `Access Denied` | 确认 `MINIO_ROOT_USER` 和 `MINIO_ACCESS_KEY_ID` 一致 |
-| **Windows 卷挂载问题** | `.\volumes\etcd` 路径无权限 | 将 `./volumes` 改为绝对路径，如 `//d/data/milvus/volumes` |
-| **Docker Desktop WSL2 内存限制** | 容器启动一段时间后卡死 | 在 Docker Desktop 设置中调整 WSL2 内存限制到至少 4GB |
+| 问题                           | 现象                                              | 解决方法                                                                                      |
+| ---------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **端口冲突**                     | `Error: port is already allocated`              | 检查 19530/2379/9000/9001/9091 是否被占用：`netstat -ano \| findstr 19530`；在 compose 文件中修改端口映射    |
+| **内存不足**                     | Milvus 容器反复重启，日志显示 OOM Killed                   | 给 MinIO 和 etcd 设置 `mem_limit`：在 `minio` 服务下添加 `deploy: resources: limits: {memory: 256M}` |
+| **etcd 启动失败**                | Milvus 日志显示 `context deadline exceeded` 连接 etcd | 确认 etcd 健康检查通过后再启动 Milvus，或增加 `depends_on` 的等待时间                                          |
+| **MinIO 权限错误**               | `Access Denied`                                 | 确认 `MINIO_ROOT_USER` 和 `MINIO_ACCESS_KEY_ID` 一致                                           |
+| **Windows 卷挂载问题**            | `.\volumes\etcd` 路径无权限                          | 将 `./volumes` 改为绝对路径，如 `//d/data/milvus/volumes`                                          |
+| **Docker Desktop WSL2 内存限制** | 容器启动一段时间后卡死                                     | 在 Docker Desktop 设置中调整 WSL2 内存限制到至少 4GB                                                   |
 
 ### 3.5 最小资源配置建议
 
@@ -413,13 +417,13 @@ attu:     约 50MB
 
 ### 4.1 优缺点对比
 
-| 维度 | Docker Standalone | Milvus Lite | 手动编译运行 |
-|------|------------------|-------------|------------|
-| 启动速度 | 慢（~60s，需拉镜像并启动3个服务） | 快（~3s，`pip install` 即可） | 极慢（需配 Go/C++ 编译环境） |
-| 架构完整性 | 完整（etcd+MinIO+Pulsar+Milvus） | 简化（单进程，无外部依赖） | 自定义 |
-| 资源占用 | 高（4GB+ 内存） | 低（512MB 即可） | 取决于配置 |
-| 生产对齐 | 是（与 Cluster 架构一致） | 否（架构差异大） | 是 |
-| 学习成本 | 中（需理解 Docker 和每个服务角色） | 低（开箱即用） | 极高 |
+| 维度    | Docker Standalone            | Milvus Lite             | 手动编译运行             |
+| ----- | ---------------------------- | ----------------------- | ------------------ |
+| 启动速度  | 慢（~60s，需拉镜像并启动3个服务）          | 快（~3s，`pip install` 即可） | 极慢（需配 Go/C++ 编译环境） |
+| 架构完整性 | 完整（etcd+MinIO+Pulsar+Milvus） | 简化（单进程，无外部依赖）           | 自定义                |
+| 资源占用  | 高（4GB+ 内存）                   | 低（512MB 即可）             | 取决于配置              |
+| 生产对齐  | 是（与 Cluster 架构一致）            | 否（架构差异大）                | 是                  |
+| 学习成本  | 中（需理解 Docker 和每个服务角色）        | 低（开箱即用）                 | 极高                 |
 
 ### 4.2 适用场景
 

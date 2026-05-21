@@ -40,11 +40,11 @@
 
 ## 和 Jedis / Lettuce / Spring Data Redis 怎么分工？
 
-| 维度 | Jedis | Lettuce | Spring Data Redis | Redisson |
-|------|--------|---------|-------------------|----------|
-| 核心风格 | 命令式 | 异步/响应式友好 | Spring 抽象 + Template | **分布式 Java 对象与服务** |
-| 典型用途 | 简单直连、脚本 | 高并发 Netty | Repository、Template | 锁、本地缓存 Map、队列、调度 |
-| 学习曲线 | 低 | 中 | 中（Spring 栈内） | 中偏高（概念多，样板少） |
+| 维度   | Jedis   | Lettuce   | Spring Data Redis    | Redisson           |
+| ---- | ------- | --------- | -------------------- | ------------------ |
+| 核心风格 | 命令式     | 异步/响应式友好  | Spring 抽象 + Template | **分布式 Java 对象与服务** |
+| 典型用途 | 简单直连、脚本 | 高并发 Netty | Repository、Template  | 锁、本地缓存 Map、队列、调度   |
+| 学习曲线 | 低       | 中         | 中（Spring 栈内）         | 中偏高（概念多，样板少）       |
 
 **选型口诀**：
 
@@ -74,14 +74,17 @@
 ### 步骤
 
 1. **写入与读取**  
+   
    - 使用 `Redisson.create` + `getBucket("lab:zero:hello")`，`set("hello")`。  
    - 同一进程内 `get()` 应得到 `"hello"`。
 
 2. **观察 key 形态**  
+   
    - 连接 `redis-cli`，执行 `SCAN 0 MATCH *lab*`（或 `SCAN 0 COUNT 100` 多翻几页直到看到业务 key）。  
    - 记录：实际 key 名是否带 Redisson 前缀/编码痕迹（与 `Codec` 有关）。
 
 3. **多「实例」一致性**  
+   
    - 再启动第二个 JVM 进程（或第二个 `main`），使用 **相同 `Config` 地址**，对 **同一逻辑名** `getBucket("lab:zero:hello")` 执行 `get()`。  
    - 可选：在第一个进程 `set` 新值，第二个进程再次 `get`。
 
